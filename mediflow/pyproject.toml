@@ -1,0 +1,8 @@
+[project]
+name = "mediflow"
+version = "0.1.0"
+description = "Agente Autónomo para Triaje, Extracción y Enrutamiento de Documentos Clínicos"
+requires-python = ">=3.14"
+dependencies = [
+    "langchain>=1.4.2",
+]
