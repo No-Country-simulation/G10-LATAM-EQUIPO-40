@@ -5,4 +5,12 @@ description = "Agente Autónomo para Triaje, Extracción y Enrutamiento de Docum
 requires-python = ">=3.14"
 dependencies = [
     "langchain>=1.4.2",
+    "langchain-cohere>=0.6.0",
+    "langchain-community>=0.4.2",
+    "langchain-core>=1.6.4",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
 ]
