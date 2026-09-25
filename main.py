@@ -50,7 +50,7 @@ schema = {
 
 msg = HumanMessage(content=[
     {"type": "text", "text": "Extrae los campos del documento. Si un campo no aparece, déjalo vacío. No inventes datos."},
-    {"type": "image_url", "image_url": {"url": to_data_url("documento.jpg")}},
+    {"type": "image_url", "image_url": {"url": to_data_url("./imagenes_de_muestra/documento.jpg")}},
 ])
 
 res = llm.invoke([msg], response_format={"type": "json_object", "schema": schema})
