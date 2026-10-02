@@ -9,6 +9,7 @@ dependencies = [
     "langchain-community>=0.4.2",
     "langchain-core>=1.6.4",
     "pdfplumber>=0.11.10",
+    "streamlit>=1.64.0",
 ]
 
 [dependency-groups]
