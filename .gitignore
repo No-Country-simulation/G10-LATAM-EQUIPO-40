@@ -9,3 +9,5 @@ __pycache__/
 
 .idea/
 .vscode/
+
+oci_storage_local/auditoria_humana
