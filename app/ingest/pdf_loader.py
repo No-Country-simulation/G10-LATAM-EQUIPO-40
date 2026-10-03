@@ -35,9 +35,9 @@ def procesar_pdf(path: str) -> dict[str, str | list[str]]:
     """
     Punto de entrada principal para PDFs.
     Devuelve:
-      - texto: str (puede ser vacío si es escaneado)
-      - imagenes_data_url: list[str] (data URLs, vacío si el PDF tiene texto nativo)
-      - modo: "texto" | "imagen" | "mixto" | "error"
+        - texto: str (puede ser vacío si es escaneado)
+        - imagenes_data_url: list[str] (data URLs, vacío si el PDF tiene texto nativo)
+        - modo: "texto" | "imagen" | "mixto" | "error"
     """
     path = str(Path(path).resolve())
     imagenes: list[str] = []
@@ -72,3 +72,6 @@ def procesar_pdf(path: str) -> dict[str, str | list[str]]:
             modo = "error"
 
     return {"texto": texto, "imagenes_data_url": imagenes, "modo": modo}
+
+resultado = procesar_pdf("/home/nicolas/Escritorio/NoCountry/G10-LATAM-EQUIPO-40/imagenes_de_muestra/documento.pdf")
+print(resultado["imagenes_data_url"])

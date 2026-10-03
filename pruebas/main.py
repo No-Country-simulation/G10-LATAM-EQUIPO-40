@@ -62,17 +62,16 @@ def procesar_archivo(ruta: str) -> dict:
     }
 
 
-def procesar_y_analizar(ruta: str) -> dict:
-    """Carga el archivo y, si es texto, lo analiza con el agente de triaje.
+def analizar_documento(documento: dict) -> dict:
+    """Enruta un documento ya cargado (salida de procesar_archivo) al agente que corresponda.
 
     Devuelve:
         {
-            "documento": <salida de procesar_archivo>,
+            "documento": <el mismo documento>,
             "triaje": dict | None,      # JSON del agente (None si no hay agente para ese modo)
             "mensaje": str | None,      # aviso cuando no se pudo analizar
         }
     """
-    documento = procesar_archivo(ruta)
     modo = documento["modo"]
 
     if modo == "texto":
@@ -97,6 +96,11 @@ def procesar_y_analizar(ruta: str) -> dict:
         "triaje": None,
         "mensaje": f"Modo '{modo}': aún no hay agente definido para este caso.",
     }
+
+
+def procesar_y_analizar(ruta: str) -> dict:
+    """Carga el archivo y lo analiza con el agente correspondiente (todo en un paso)."""
+    return analizar_documento(procesar_archivo(ruta))
 
 
 if __name__ == "__main__":

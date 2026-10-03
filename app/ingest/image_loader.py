@@ -76,3 +76,6 @@ def imagen_desde_bytes(data: bytes, media_type: str = "image/jpeg") -> str:
 
     b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return f"data:{media_type};base64,{b64}"
+resultado = imagen_a_base64("/home/nicolas/Escritorio/NoCountry/G10-LATAM-EQUIPO-40/imagenes_de_muestra/documento.jpg")
+
+print(resultado[0:100])
