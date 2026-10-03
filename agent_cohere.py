@@ -1,5 +1,13 @@
+"""
+agent_cohere.py — Agente MediFlow de triaje clínico sobre texto (Cohere).
+
+Recibe el texto de un documento médico y devuelve un dict con el triaje.
+Requiere COHERE_API_KEY en el entorno o en un archivo .env.
+"""
+
 import os
 import json
+
 import cohere
 from dotenv import load_dotenv
 
@@ -26,6 +34,20 @@ REGLAS DE DECISIÓN CLÍNICA:
 3. AMBIGUA / HITL: Si hay dudas diagnósticas, datos incompletos del paciente o falta de firma/médico, asigna score_confianza < 0.85, prioridad 'AMBIGUA', requiere_auditoria: true y destino: 'Auditoría HITL'.
 """
 
+
+def aplicar_reglas_hitl(datos: dict) -> dict:
+    """Regla de negocio de MediFlow: forzar HITL si la confianza es < 0.85 o faltan datos."""
+    score = float(datos.get("score_confianza", 0.0))
+    if score < 0.85 or not datos.get("paciente") or datos.get("paciente") == "No identificado":
+        datos["requiere_auditoria"] = True
+        datos["destino_sugerido"] = "Auditoría HITL"
+        if not datos.get("motivo_auditoria"):
+            datos["motivo_auditoria"] = (
+                "Confianza del modelo inferior a 85% o datos de filiación incompletos."
+            )
+    return datos
+
+
 def analizar_triaje_cohere(texto_clinico: str) -> dict:
     """Envía el documento clínico al modelo de Cohere y retorna el JSON estructurado."""
     api_key = os.getenv("COHERE_API_KEY")
@@ -33,38 +55,28 @@ def analizar_triaje_cohere(texto_clinico: str) -> dict:
         return {
             "error": "Variable COHERE_API_KEY no encontrada en el entorno o archivo .env",
             "requiere_auditoria": True,
-            "motivo_auditoria": "Credenciales de Cohere faltantes."
+            "motivo_auditoria": "Credenciales de Cohere faltantes.",
         }
 
     try:
         co = cohere.ClientV2(api_key=api_key)
-        
         respuesta = co.chat(
             model="command-r-08-2024",
             messages=[
                 {"role": "system", "content": PROMPT_SISTEMA},
-                {"role": "user", "content": f"Documento médico a procesar:\n{texto_clinico}"}
+                {"role": "user", "content": f"Documento médico a procesar:\n{texto_clinico}"},
             ],
             response_format={"type": "json_object"},
-            temperature=0.1
+            temperature=0.1,
         )
-        
         contenido_texto = respuesta.message.content[0].text
         datos = json.loads(contenido_texto)
 
-        # Regla de negocio de MediFlow: forzar HITL si la confianza es < 0.85 o faltan datos
-        score = float(datos.get("score_confianza", 0.0))
-        if score < 0.85 or not datos.get("paciente") or datos.get("paciente") == "No identificado":
-            datos["requiere_auditoria"] = True
-            datos["destino_sugerido"] = "Auditoría HITL"
-            if not datos.get("motivo_auditoria"):
-                datos["motivo_auditoria"] = "Confianza del modelo inferior a 85% o datos de filiación incompletos."
-
-        return datos
+        return aplicar_reglas_hitl(datos)
 
     except Exception as e:
         return {
             "error": str(e),
             "requiere_auditoria": True,
-            "motivo_auditoria": f"Excepción durante la inferencia con Cohere: {e}"
+            "motivo_auditoria": f"Excepción durante la inferencia con Cohere: {e}",
         }

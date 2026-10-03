@@ -1,25 +1,31 @@
-import streamlit as st
-import json
-import time
-import os
+"""
+app.py — MediFlow: triaje, extracción y enrutamiento clínico (Streamlit).
 
-# Soporte para lectura de archivos PDF si pypdf está instalado
-try:
-    import pypdf
-    PYPDF_DISPONIBLE = True
-except ImportError:
-    PYPDF_DISPONIBLE = False
+Ejecutar:
+    streamlit run app.py
+
+Pipeline de ingesta:
+    archivo → main.procesar_archivo (image_loader / pdf_loader)
+            → main.analizar_documento → agent_cohere (texto) | agent_vision (imagen)
+"""
+
+import os
+import tempfile
+from pathlib import Path
+
+import streamlit as st
 
 from agent_cohere import analizar_triaje_cohere
+from main import EXTENSIONES_SOPORTADAS, analizar_documento, procesar_archivo
 
 # ==============================================================================
-# ETAPA 1: CONFIGURACIÓN GENERAL Y ESTILO
+# CONFIGURACIÓN GENERAL Y ESTILO
 # ==============================================================================
 st.set_page_config(
     page_title="MediFlow - Agente Clínico (Cohere AI)",
     page_icon="🏥",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
@@ -30,9 +36,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inicializar cola HITL en la sesión
+# Estado de la sesión
 if "cola_hitl" not in st.session_state:
     st.session_state.cola_hitl = []
+if "ultimo_resultado" not in st.session_state:
+    st.session_state.ultimo_resultado = None
+if "doc_cache" not in st.session_state:
+    st.session_state.doc_cache = None
 
 # Barra lateral
 with st.sidebar:
@@ -40,22 +50,80 @@ with st.sidebar:
     st.markdown("**Agente Clínico Autónomo**")
     st.caption("No Country - Equipo G10-40")
     st.divider()
-    st.success("🟢 Inferencia: Cohere (command-r)")
+    st.success("🟢 Inferencia: Cohere (command-r texto · command-a-vision imagen)")
     st.info("📦 Buckets OCI: `triage-urgencias`, `triage-rutina`, `triage-hitl`")
     st.write(f"Casos en Auditoría HITL: **{len(st.session_state.cola_hitl)}**")
     st.divider()
-    st.caption("Versión: v2.0 - Pipeline Completo con Inferencia Cohere")
+    st.caption("Versión: v2.1 - Pipeline con agentes de texto y visión")
 
+
+# ==============================================================================
+# FUNCIONES AUXILIARES
+# ==============================================================================
+def cargar_documento(archivo):
+    """Guarda el archivo subido en un temporal, lo procesa con los loaders y cachea el resultado.
+
+    Devuelve (documento, error). El análisis con IA NO ocurre aquí.
+    """
+    clave = (archivo.name, archivo.size)
+    cache = st.session_state.doc_cache
+    if cache and cache["clave"] == clave:
+        return cache["documento"], None
+
+    sufijo = Path(archivo.name).suffix.lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=sufijo) as tmp:
+        tmp.write(archivo.getvalue())
+        ruta_tmp = tmp.name
+    try:
+        documento = procesar_archivo(ruta_tmp)
+    except Exception as e:
+        return None, str(e)
+    finally:
+        os.unlink(ruta_tmp)
+
+    st.session_state.doc_cache = {"clave": clave, "documento": documento}
+    st.session_state.ultimo_resultado = None  # archivo nuevo → limpiar resultado previo
+    return documento, None
+
+
+def mostrar_resultado(resultado: dict):
+    """Pinta el resultado del triaje (badge, métricas, destino OCI y JSON)."""
+    if "error" in resultado:
+        st.error(f"Error: {resultado['error']}")
+        return
+
+    confianza = float(resultado.get("score_confianza", 0.0))
+    prioridad = resultado.get("prioridad", "AMBIGUA")
+    destino = resultado.get("destino_sugerido", "No definido")
+
+    if resultado.get("requiere_auditoria"):
+        st.markdown('<span class="badge-hitl">⚠️ RETENIDO PARA AUDITORÍA CLÍNICA (HITL)</span>', unsafe_allow_html=True)
+        st.metric("Confianza del Modelo", f"{confianza * 100:.1f}%", "- Requiere revisión manual (< 85%)")
+        st.warning(f"**Motivo:** {resultado.get('motivo_auditoria', 'Incertidumbre o datos incompletos')}")
+        st.markdown("**Destino OCI:** `oci://triage-hitl/`")
+    elif prioridad == "CRÍTICA":
+        st.markdown('<span class="badge-urgente">🚨 PRIORIDAD: CRÍTICA / URGENCIA</span>', unsafe_allow_html=True)
+        st.metric("Confianza del Modelo", f"{confianza * 100:.1f}%", "Aprobado (> 85%)")
+        st.success(f"**Destino:** {destino}")
+        st.markdown("**Destino OCI:** `oci://triage-urgencias/`")
+    else:
+        st.markdown('<span class="badge-rutina">🟢 PRIORIDAD: RUTINA AMBULATORIA</span>', unsafe_allow_html=True)
+        st.metric("Confianza del Modelo", f"{confianza * 100:.1f}%", "Aprobado (> 85%)")
+        st.info(f"**Destino:** {destino}")
+        st.markdown("**Destino OCI:** `oci://triage-rutina/`")
+
+    st.markdown("#### Entidades Clínicas Extraídas (JSON)")
+    st.json(resultado)
+
+
+# ==============================================================================
 st.title("MediFlow: Triaje, Extracción y Enrutamiento Clínico")
 st.write("Automatización de ingesta médica con inferencia Cohere y supervisión médica Human-in-the-Loop.")
 
-# ==============================================================================
-# ETAPA 2: LAS 3 PESTAÑAS PRINCIPALES
-# ==============================================================================
 tab_ingesta, tab_casos, tab_hitl = st.tabs([
     "📥 Ingesta y Triaje Clínico",
     "🧪 Casos de Demostración",
-    f"🩺 Auditoría Human-in-the-Loop ({len(st.session_state.cola_hitl)})"
+    f"🩺 Auditoría Human-in-the-Loop ({len(st.session_state.cola_hitl)})",
 ])
 
 # ------------------------------------------------------------------------------
@@ -67,88 +135,85 @@ with tab_ingesta:
 
     with col_input:
         metodo = st.radio("Método de entrada:", ["Subir Documento (PDF / Imagen)", "Transcripción Manual"])
-        texto_a_procesar = ""
+        subir = metodo == "Subir Documento (PDF / Imagen)"
+        documento = None
+        texto_manual = ""
 
-        if metodo == "Subir Documento (PDF / Imagen)":
+        if subir:
             archivo = st.file_uploader(
                 "Selecciona una orden médica o receta:",
-                type=["pdf", "png", "jpg", "jpeg"]
-            )
-            
-            tipo_doc_declarado = st.selectbox(
-                "Categoría declarada:",
-                ["Receta Médica Ambulatoria", "Orden de Urgencia / Triaje", "Examen de Laboratorio", "Otro"]
+                type=[e.lstrip(".") for e in EXTENSIONES_SOPORTADAS],
             )
 
             if archivo:
-                tamano_kb = round(archivo.size / 1024, 2)
-                st.caption(f"Archivo: `{archivo.name}` ({tamano_kb} KB)")
+                st.caption(f"Archivo: `{archivo.name}` ({round(archivo.size / 1024, 2)} KB)")
+                with st.spinner("Leyendo documento..."):
+                    documento, err = cargar_documento(archivo)
 
-                if archivo.type.startswith("image/"):
-                    st.image(archivo, caption="Previsualización del documento", use_container_width=True)
-                    texto_a_procesar = st.text_area(
-                        "Texto extraído del documento (OCR / Transcripción):",
-                        value="POSTA RURAL DE SALUD. Paciente Alicia o Ana M... Dolor abd difuso, nauseas leves. Hipotesis: Colico biliar vs Apendicitis incipiente?? Viadil amp. Firma ilegible.",
-                        height=120
-                    )
-                elif archivo.type == "application/pdf":
-                    st.info(f"📄 Archivo PDF cargado: `{archivo.name}`")
-                    if PYPDF_DISPONIBLE:
-                        try:
-                            lector = pypdf.PdfReader(archivo)
-                            texto_extraido = "\n".join([p.extract_text() for p in lector.pages if p.extract_text()])
-                        except Exception as e:
-                            texto_extraido = f"Error al leer PDF: {e}"
+                if err:
+                    st.error(f"No se pudo leer el archivo: {err}")
+                else:
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Tipo", documento["tipo"])
+                    c2.metric("Modo", documento["modo"])
+                    c3.metric("Imágenes", len(documento["imagenes_data_url"]))
+
+                    if documento["modo"] == "texto":
+                        # Texto nativo: editable antes de enviarlo al agente de texto
+                        texto_editado = st.text_area(
+                            "Texto extraído del documento (editable):",
+                            value=documento["texto"],
+                            height=220,
+                            key=f"texto_{archivo.name}_{archivo.size}",
+                        )
+                        documento = {**documento, "texto": texto_editado}
+                    elif documento["modo"] == "error":
+                        st.error(documento["texto"])
                     else:
-                        texto_extraido = "Instala 'pypdf' para lectura automática, o escribe aquí el contenido."
-
-                    texto_a_procesar = st.text_area("Contenido extraído del PDF:", value=texto_extraido, height=160)
+                        # Imagen / escaneado: vista previa de lo que verá el agente de visión
+                        for i, url in enumerate(documento["imagenes_data_url"][:3], start=1):
+                            st.image(url, caption=f"Imagen {i}", use_container_width=True)
+                        restantes = len(documento["imagenes_data_url"]) - 3
+                        if restantes > 0:
+                            st.caption(f"... y {restantes} imagen(es) más.")
         else:
-            tipo_doc_declarado = "Transcripción Directa"
-            texto_a_procesar = st.text_area(
+            texto_manual = st.text_area(
                 "Ingresa o pega el informe clínico:",
                 height=220,
-                placeholder="Escribe los síntomas, antecedentes y hallazgos diagnósticos..."
+                placeholder="Escribe los síntomas, antecedentes y hallazgos diagnósticos...",
             )
 
         btn_evaluar = st.button("🚀 Procesar con Agente MediFlow (Cohere)", type="primary", use_container_width=True)
 
     with col_output:
         st.subheader("2. Evaluación y Enrutamiento")
+
         if btn_evaluar:
-            if not texto_a_procesar.strip():
+            resultado = None
+            if subir:
+                if documento is None:
+                    st.warning("⚠️ Debes subir un documento válido.")
+                else:
+                    agente = "visión" if documento["modo"] == "imagen" else "texto"
+                    with st.spinner(f"Analizando con el agente de {agente} de Cohere..."):
+                        salida = analizar_documento(documento)
+                    if salida["mensaje"]:
+                        st.warning(salida["mensaje"])
+                    resultado = salida["triaje"]
+            elif not texto_manual.strip():
                 st.warning("⚠️ Debes proporcionar un texto clínico para evaluar.")
             else:
                 with st.spinner("Procesando con Cohere AI y extrayendo entidades clínicas..."):
-                    resultado = analizar_triaje_cohere(texto_a_procesar)
+                    resultado = analizar_triaje_cohere(texto_manual)
 
-                if "error" in resultado:
-                    st.error(f"Error: {resultado['error']}")
-                else:
-                    confianza = float(resultado.get("score_confianza", 0.0))
-                    prioridad = resultado.get("prioridad", "AMBIGUA")
-                    destino = resultado.get("destino_sugerido", "No definido")
+            if resultado:
+                if "error" not in resultado and resultado.get("requiere_auditoria"):
+                    st.session_state.cola_hitl.append(resultado)
+                st.session_state.ultimo_resultado = resultado
 
-                    if resultado.get("requiere_auditoria"):
-                        st.markdown('<span class="badge-hitl">⚠️ RETENIDO PARA AUDITORÍA CLÍNICA (HITL)</span>', unsafe_allow_html=True)
-                        st.metric("Confianza del Modelo", f"{confianza * 100:.1f}%", "- Requiere revisión manual (< 85%)")
-                        st.warning(f"**Motivo:** {resultado.get('motivo_auditoria', 'Incertidumbre o datos incompletos')}")
-                        st.markdown("**Destino OCI:** `oci://triage-hitl/`")
-                        st.session_state.cola_hitl.append(resultado)
-                    elif prioridad == "CRÍTICA":
-                        st.markdown('<span class="badge-urgente">🚨 PRIORIDAD: CRÍTICA / URGENCIA</span>', unsafe_allow_html=True)
-                        st.metric("Confianza del Modelo", f"{confianza * 100:.1f}%", "Aprobado (> 85%)")
-                        st.success(f"**Destino:** {destino}")
-                        st.markdown("**Destino OCI:** `oci://triage-urgencias/`")
-                    else:
-                        st.markdown('<span class="badge-rutina">🟢 PRIORIDAD: RUTINA AMBULATORIA</span>', unsafe_allow_html=True)
-                        st.metric("Confianza del Modelo", f"{confianza * 100:.1f}%", "Aprobado (> 85%)")
-                        st.info(f"**Destino:** {destino}")
-                        st.markdown("**Destino OCI:** `oci://triage-rutina/`")
-
-                    st.markdown("#### Entidades Clínicas Extraídas (JSON)")
-                    st.json(resultado)
-        else:
+        if st.session_state.ultimo_resultado:
+            mostrar_resultado(st.session_state.ultimo_resultado)
+        elif not btn_evaluar:
             st.info("Los resultados de la inferencia clínica aparecerán aquí al procesar el documento.")
 
 # ------------------------------------------------------------------------------

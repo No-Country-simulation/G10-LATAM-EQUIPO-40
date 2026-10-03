@@ -1103,6 +1103,7 @@ dependencies = [
     { name = "pdf2image" },
     { name = "pdfplumber" },
     { name = "pillow" },
+    { name = "pypdfium2" },
     { name = "streamlit" },
 ]
 
@@ -1122,6 +1123,7 @@ requires-dist = [
     { name = "pdf2image", specifier = ">=1.17.0" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pypdfium2", specifier = ">=5.13.0" },
     { name = "streamlit", specifier = ">=1.64.0" },
 ]
 
