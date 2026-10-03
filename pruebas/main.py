@@ -24,7 +24,9 @@ from agent_vision import analizar_triaje_vision
 from image_loader import imagen_a_base64
 from pdf_loader import procesar_pdf
 
-EXTENSIONES_IMAGEN = {".jpg", ".jpeg", ".png", ".webp"}
+from image_loader import imagen_a_base64, FORMATOS_SOPORTADOS
+
+EXTENSIONES_IMAGEN = set(FORMATOS_SOPORTADOS)
 EXTENSIONES_PDF = {".pdf"}
 EXTENSIONES_SOPORTADAS = sorted(EXTENSIONES_IMAGEN | EXTENSIONES_PDF)
 

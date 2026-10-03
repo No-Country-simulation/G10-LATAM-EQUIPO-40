@@ -67,11 +67,19 @@ def procesar_pdf(path: str) -> dict[str, str | list[str]]:
         try:
             imagenes = pdf_a_imagenes_base64(path)
             modo = "imagen"
-        except RuntimeError:
-            texto = "[ERROR] PDF escaneado sin pdf2image disponible."
-            modo = "error"
+        except Exception as e:  # ImportError (pdf2image) o PDFInfoNotInstalledError (poppler)
+            raise RuntimeError(
+                f"No se pudo convertir el PDF a imágenes ({e}). "
+                "Instala pdf2image (pip install pdf2image) y poppler: "
+                "sudo apt install poppler-utils"
+            )
 
     return {"texto": texto, "imagenes_data_url": imagenes, "modo": modo}
 
-resultado = procesar_pdf("/home/nicolas/Escritorio/NoCountry/G10-LATAM-EQUIPO-40/imagenes_de_muestra/documento.pdf")
-print(resultado["imagenes_data_url"])
+if __name__ == "__main__":
+    # Prueba manual: python pdf_loader.py
+    resultado = procesar_pdf(
+        "/home/nicolas/Escritorio/NoCountry/G10-LATAM-EQUIPO-40/imagenes_de_muestra/documento.pdf"
+    )
+    print(f"modo={resultado['modo']} | chars_texto={len(resultado['texto'])} "
+          f"| imágenes={len(resultado['imagenes_data_url'])}")
