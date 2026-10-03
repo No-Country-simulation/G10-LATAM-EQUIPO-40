@@ -12,13 +12,15 @@ main.py — Punto de entrada de procesamiento de archivos.
     }
 
 2. procesar_y_analizar(): enruta según el modo:
-    - "texto"  -> agente de triaje de texto (agent_cohere.analizar_triaje_cohere)
-    - resto    -> pendiente (rama de visión, siguiente paso)
+    - "texto"  -> agente de texto   (agent_cohere.analizar_triaje_cohere)
+    - "imagen" -> agente de visión  (agent_vision.analizar_triaje_vision)
+    - resto    -> pendiente ("mixto") o error
 """
 
 from pathlib import Path
 
 from agent_cohere import analizar_triaje_cohere
+from agent_vision import analizar_triaje_vision
 from image_loader import imagen_a_base64
 from pdf_loader import procesar_pdf
 
@@ -66,7 +68,7 @@ def procesar_y_analizar(ruta: str) -> dict:
     Devuelve:
         {
             "documento": <salida de procesar_archivo>,
-            "triaje": dict | None,      # JSON del agente (None si aún no hay agente para ese modo)
+            "triaje": dict | None,      # JSON del agente (None si no hay agente para ese modo)
             "mensaje": str | None,      # aviso cuando no se pudo analizar
         }
     """
@@ -80,13 +82,20 @@ def procesar_y_analizar(ruta: str) -> dict:
             "mensaje": None,
         }
 
+    if modo == "imagen":
+        return {
+            "documento": documento,
+            "triaje": analizar_triaje_vision(documento["imagenes_data_url"]),
+            "mensaje": None,
+        }
+
     if modo == "error":
         return {"documento": documento, "triaje": None, "mensaje": documento["texto"]}
 
     return {
         "documento": documento,
         "triaje": None,
-        "mensaje": f"Modo '{modo}': el agente de visión aún no está implementado.",
+        "mensaje": f"Modo '{modo}': aún no hay agente definido para este caso.",
     }
 
 

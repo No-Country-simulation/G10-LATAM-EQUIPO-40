@@ -35,6 +35,19 @@ REGLAS DE DECISIÓN CLÍNICA:
 """
 
 
+def aplicar_reglas_hitl(datos: dict) -> dict:
+    """Regla de negocio de MediFlow: forzar HITL si la confianza es < 0.85 o faltan datos."""
+    score = float(datos.get("score_confianza", 0.0))
+    if score < 0.85 or not datos.get("paciente") or datos.get("paciente") == "No identificado":
+        datos["requiere_auditoria"] = True
+        datos["destino_sugerido"] = "Auditoría HITL"
+        if not datos.get("motivo_auditoria"):
+            datos["motivo_auditoria"] = (
+                "Confianza del modelo inferior a 85% o datos de filiación incompletos."
+            )
+    return datos
+
+
 def analizar_triaje_cohere(texto_clinico: str) -> dict:
     """Envía el documento clínico al modelo de Cohere y retorna el JSON estructurado."""
     api_key = os.getenv("COHERE_API_KEY")
@@ -59,17 +72,7 @@ def analizar_triaje_cohere(texto_clinico: str) -> dict:
         contenido_texto = respuesta.message.content[0].text
         datos = json.loads(contenido_texto)
 
-        # Regla de negocio de MediFlow: forzar HITL si la confianza es < 0.85 o faltan datos
-        score = float(datos.get("score_confianza", 0.0))
-        if score < 0.85 or not datos.get("paciente") or datos.get("paciente") == "No identificado":
-            datos["requiere_auditoria"] = True
-            datos["destino_sugerido"] = "Auditoría HITL"
-            if not datos.get("motivo_auditoria"):
-                datos["motivo_auditoria"] = (
-                    "Confianza del modelo inferior a 85% o datos de filiación incompletos."
-                )
-
-        return datos
+        return aplicar_reglas_hitl(datos)
 
     except Exception as e:
         return {
