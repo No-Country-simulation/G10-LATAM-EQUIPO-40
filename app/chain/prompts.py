@@ -30,6 +30,33 @@ PROMPT_CLASIFICAR_TEXTO = """Clasifica el siguiente documento clínico:
 
 {texto}"""
 
+PROMPT_CLASIFICAR_IMAGEN = "Clasifica el documento clínico que aparece en la imagen."
+
+SCHEMA_CLASIFICAR = {
+    "type": "object",
+    "properties": {
+        "tipo_documento": {
+            "type": "string",
+            "enum": [
+                "Receta Médica",
+                "Informe de Estudio por Imágenes",
+                "Informe de Laboratorio",
+                "Orden de Solicitud de Procedimiento",
+                "Epicrisis / Informe de Alta",
+                "Certificado Médico",
+                "Desconocido",
+            ],
+        },
+        "especialidad": {"type": "string"},
+        "nivel_prioridad": {
+            "type": "string",
+            "enum": ["Urgente", "Alta", "Normal", "Baja"],
+        },
+        "score_confianza": {"type": "number"},
+    },
+    "required": ["tipo_documento", "nivel_prioridad", "score_confianza"],
+}
+
 SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas de alta precisión.
 Extrae exactamente lo que está escrito en el documento. No inventes ni infieras datos que no estén presentes.
 
