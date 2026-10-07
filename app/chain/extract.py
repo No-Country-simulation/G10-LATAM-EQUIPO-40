@@ -39,7 +39,7 @@ def _get_llm(tiene_texto: bool) -> ChatCohere:
     return ChatCohere(
         model=model,
         temperature=0.0,
-        response_format={"type": "json_object", "schema": SCHEMA_EXTRAER},
+        response_format={"type": "json_object", "json_schema": SCHEMA_EXTRAER},
     )
 
 def _construir_mensajes(estado: EstadoPipeline) -> list:
@@ -58,24 +58,37 @@ def _construir_mensajes(estado: EstadoPipeline) -> list:
 def _parsear_respuesta(raw: str) -> DatosExtraidos:
     data = json.loads(raw)
 
+    def _a_lista(valor) -> list | None:
+        if isinstance(valor, list):
+            return valor or None
+        if isinstance(valor, str) and valor.strip():
+            return [valor]
+        return None
+
     # Paciente
-    p = data.get("paciente") or {}
+    nombre_paciente = data.get("nombre_paciente")
+    edad_paciente   = data.get("edad_paciente")
+    doc_paciente    = data.get("documento_paciente")
     paciente = Paciente(
-        nombre=p.get("nombre"),
-        edad=p.get("edad"),
-        documento_identidad=p.get("documento_identidad"),
-    ) if p else None
+        nombre=nombre_paciente,
+        edad=edad_paciente,
+        documento_identidad=doc_paciente,
+    ) if any([nombre_paciente, edad_paciente, doc_paciente]) else None
 
     # Médico
-    m = data.get("medico_solicitante") or {}
+    nombre_medico   = data.get("nombre_medico")
+    matricula_medico = data.get("matricula_medico")
+    especialidad_medico = data.get("especialidad_medico")
     medico = MedicoSolicitante(
-        nombre=m.get("nombre"),
-        matricula=m.get("matricula"),
-        especialidad=m.get("especialidad"),
-    ) if m else None
+        nombre=nombre_medico,
+        matricula=matricula_medico,
+        especialidad=especialidad_medico,
+    ) if any([nombre_medico, matricula_medico, especialidad_medico]) else None
 
     # Medicamentos
     meds_raw = data.get("medicamentos") or []
+    if not isinstance(meds_raw, list):
+        meds_raw = []
     medicamentos = [
         Medicamento(
             nombre=med["nombre"],
@@ -84,7 +97,7 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
             duracion=med.get("duracion"),
         )
         for med in meds_raw
-        if med.get("nombre")
+        if isinstance(med, dict) and med.get("nombre")
     ] or None
 
     return DatosExtraidos(
@@ -94,9 +107,9 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         diagnostico_principal=data.get("diagnostico_principal"),
         cie10_sugerido=data.get("cie10_sugerido"),
         medicamentos=medicamentos,
-        estudios_solicitados=data.get("estudios_solicitados") or None,
-        hallazgos_criticos=data.get("hallazgos_criticos") or None,
-        campos_faltantes=data.get("campos_faltantes") or None,
+        estudios_solicitados=_a_lista(data.get("estudios_solicitados")),
+        hallazgos_criticos=_a_lista(data.get("hallazgos_criticos")),
+        campos_faltantes=_a_lista(data.get("campos_faltantes")),
     )
 
 def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
