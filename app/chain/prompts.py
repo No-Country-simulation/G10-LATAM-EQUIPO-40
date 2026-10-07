@@ -57,17 +57,20 @@ SCHEMA_CLASIFICAR = {
     "required": ["tipo_documento", "nivel_prioridad", "score_confianza"],
 }
 
-SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas de alta precisión.
-Extrae exactamente lo que está escrito en el documento. No inventes ni infieras datos que no estén presentes.
+SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas. Tu única tarea es leer el documento y completar el JSON con TODOS los datos que encuentres.
 
-Reglas estrictas:
-- Si un campo no aparece en el documento, devuelve null.
-- campos_faltantes: enumera explícitamente los campos importantes que faltan o son ilegibles.
-  Ejemplos: "nombre del paciente", "matrícula médica", "diagnóstico", "fecha".
-- hallazgos_criticos: incluye información únicamente cuando exista un riesgo vital explícito (TEP, IAM, ACV, sepsis, hemorragia, shock, etc.).
-- cie10_sugerido: incluye un código únicamente si existe un alto grado de certeza; en caso de duda, devuelve null.
-- medicamentos: incluye únicamente los medicamentos que aparecen explícitamente recetados en el documento.
-- Responde únicamente con el JSON solicitado, sin texto adicional."""
+REGLAS ESTRICTAS:
+- Extrae EXACTAMENTE lo que está escrito, sin inventar.
+- Si el dato está en el documento → ponlo en el campo correspondiente.
+- Si el dato NO está → null.
+- nombre del paciente: busca "Paciente:", nombres propios, "Sr.", "Sra."
+- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:"
+- matrícula: busca "MP", "Reg", "Matrícula", número junto al nombre del médico.
+- diagnóstico: busca "Diagnóstico:", "Dx:", "Conclusión:", "compatible con".
+- medicamentos: busca nombres de fármacos con dosis.
+- hallazgos_criticos: SOLO si hay riesgo vital explícito (TEP, IAM, ACV, sepsis, hemorragia, shock).
+- campos_faltantes: lista los campos importantes que NO encontraste.
+- Responde ÚNICAMENTE con el JSON, sin texto adicional."""
 
 PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente documento:
 
@@ -78,62 +81,31 @@ PROMPT_EXTRAER_IMAGEN = "Extrae todas las entidades clínicas del documento que 
 SCHEMA_EXTRAER = {
     "type": "object",
     "properties": {
-        "paciente": {
-            "type": "object",
-            "properties": {
-                "nombre": {"type": ["string", "null"]},
-                "edad": {"type": ["integer", "null"]},
-                "documento_identidad": {"type": ["string", "null"]},
-            },
-        },
-        "medico_solicitante": {
-            "type": "object",
-            "properties": {
-                "nombre": {"type": ["string", "null"]},
-                "matricula": {"type": ["string", "null"]},
-                "especialidad": {"type": ["string", "null"]},
-            },
-        },
-        "estudio_realizado": {
-            "type": ["string", "null"]
-        },
-        "diagnostico_principal": {
-            "type": ["string", "null"]
-        },
-        "cie10_sugerido": {
-            "type": ["string", "null"]
-        },
+        "nombre_paciente":      {"type": "string"},
+        "edad_paciente":        {"type": "integer"},
+        "documento_paciente":   {"type": "string"},
+        "nombre_medico":        {"type": "string"},
+        "matricula_medico":     {"type": "string"},
+        "especialidad_medico":  {"type": "string"},
+        "estudio_realizado":    {"type": "string"},
+        "diagnostico_principal":{"type": "string"},
+        "cie10_sugerido":       {"type": "string"},
         "medicamentos": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "nombre": {"type": "string"},
-                    "dosis": {"type": ["string", "null"]},
-                    "frecuencia": {"type": ["string", "null"]},
-                    "duracion": {"type": ["string", "null"]},
+                    "nombre":    {"type": "string"},
+                    "dosis":     {"type": "string"},
+                    "frecuencia":{"type": "string"},
+                    "duracion":  {"type": "string"},
                 },
                 "required": ["nombre"],
             },
         },
-        "estudios_solicitados": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            },
-        },
-        "hallazgos_criticos": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            },
-        },
-        "campos_faltantes": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            },
-        },
+        "estudios_solicitados": {"type": "array", "items": {"type": "string"}},
+        "hallazgos_criticos":   {"type": "array", "items": {"type": "string"}},
+        "campos_faltantes":     {"type": "array", "items": {"type": "string"}},
     },
     "required": ["campos_faltantes"],
 }
