@@ -30,7 +30,7 @@ def _get_llm(tiene_texto: bool) -> ChatCohere:
         temperature=0.1,
         response_format={
             "type": "json_object",
-            "schema": {SCHEMA_CLASIFICAR}
+            "json_schema": SCHEMA_CLASIFICAR
         },
     )
 
@@ -45,7 +45,10 @@ def _construir_mensajes(estado: EstadoPipeline) -> list:
     # Imagen: uno o varios data URLs (máximo 3 páginas)
     content = [{"type": "text", "text": PROMPT_CLASIFICAR_IMAGEN}]
     for data_url in (estado.imagenes_data_url or [])[:3]:
-        content.append({"type": "image_url", "image_url": {"url": data_url}})
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": data_url}
+        })
 
     return [system, HumanMessage(content=content)]
 
