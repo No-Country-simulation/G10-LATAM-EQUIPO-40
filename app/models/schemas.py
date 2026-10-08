@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from models.enums import DestinoEnrutamiento, NivelPrioridad, TipoArchivo, TipoDocumento
+from app.models.enums import DestinoEnrutamiento, NivelPrioridad, TipoArchivo, TipoDocumento
 
 class Paciente(BaseModel):
     nombre: Optional[str] = None
