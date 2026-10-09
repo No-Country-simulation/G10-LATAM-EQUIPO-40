@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 BUCKET_NAME = os.getenv("OCI_BUCKET_NAME", "mediflow-documentos-clinicos")
 OCI_NAMESPACE = os.getenv("OCI_NAMESPACE", "")
-OCI_REGION = os.getenv("OCI_REGION", "us-ashburn-1")
+OCI_REGION = os.getenv("OCI_REGION", "")
 
 try:
     import oci  # type: ignore
@@ -35,8 +35,11 @@ except ImportError:
     logger.warning("[OCI] SDK no instalado. Modo simulado activo.")
 
 def _get_client():
-    """Crea cliente OCI desde ~/.oci/config o variables de entorno."""
     config = oci.config.from_file()
+    if OCI_REGION:
+        config["region"] = OCI_REGION
+    if os.getenv("OCI_PASS_PHRASE"):
+        config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
     return oci.object_storage.ObjectStorageClient(config)
 
 def _get_namespace(client) -> str:
