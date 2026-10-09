@@ -103,7 +103,7 @@ def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
     # Persistir en OCI
     oci_resultado = guardar_documento(
         documento_id=estado.documento_id,
-        contenido=estado.model_dump(mode="json"),
+        contenido=estado.model_dump(mode="json", exclude={"imagenes_data_url"}),
         destino=estado.decision.destino.value,
         es_urgente=es_urgente,
     )
