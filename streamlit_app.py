@@ -140,6 +140,8 @@ def _estilos():
 def _inicializar_estado():
     if "cola_hitl" not in st.session_state:
         st.session_state.cola_hitl = []
+    if "demos_ejecutadas" not in st.session_state:
+        st.session_state.demos_ejecutadas = []  # más reciente primero
 
 def _sidebar():
     with st.sidebar:
@@ -166,7 +168,12 @@ def _sidebar():
         st.divider()
         st.caption("MediFlow v1.0 — MVP Hackathon")
 
-def _mostrar_resultado(resultado: dict, badge: str | None = None, badge_texto: str | None = None):
+def _mostrar_resultado(
+    resultado: dict,
+    badge: str | None = None,
+    badge_texto: str | None = None,
+    anidado: bool = False,
+):
     """Renderiza el resultado del pipeline en una sola columna, con jerarquía de encabezados."""
 
     if badge:
@@ -265,12 +272,19 @@ def _mostrar_resultado(resultado: dict, badge: str | None = None, badge_texto: s
         st.write("Sin datos extraídos.")
 
     st.divider()
-    with st.expander("Ver JSON completo"):
-        st.json(resultado)
+    if anidado:
+        # Streamlit no permite expanders dentro de expanders
+        st.markdown("###### JSON completo")
+        st.json(resultado, expanded=False)
+    else:
+        with st.expander("Ver JSON completo"):
+            st.json(resultado)
 
 
-def _ejecutar_caso(caso: dict):
-    """Ejecuta un caso demo y muestra el resultado."""
+MAX_DEMOS_VISIBLES = 3
+
+def _ejecutar_caso(caso: dict) -> dict:
+    """Ejecuta un caso demo, lo encola en HITL si corresponde y devuelve el resultado."""
     with st.spinner(f"Procesando {caso['id']} con Cohere..."):
         resultado = procesar_texto(
             documento_id=caso["id"],
@@ -278,9 +292,6 @@ def _ejecutar_caso(caso: dict):
             texto=caso["texto"],
         )
 
-    _mostrar_resultado(resultado, badge=caso["badge"], badge_texto=caso["badge_texto"])
-
-    # Agregar a cola HITL si corresponde
     decision = resultado.get("decision") or {}
     if decision.get("requiere_revision_humana"):
         ya_en_cola = any(
@@ -289,6 +300,8 @@ def _ejecutar_caso(caso: dict):
         )
         if not ya_en_cola:
             st.session_state.cola_hitl.append(resultado)
+
+    return resultado
 
 def _tab_ingesta():
     st.subheader("Ingesta y Triaje de Documentos Clínicos")
@@ -409,6 +422,7 @@ def _tab_casos():
     st.write("Los 3 flujos obligatorios del hackathon ejecutados en vivo con Cohere.")
 
     cols = st.columns(3, gap="large")
+    caso_a_ejecutar = None
 
     for col, caso in zip(cols, CASOS_DEMO):
         with col:
@@ -416,8 +430,35 @@ def _tab_casos():
             st.caption(caso["caption"])
             st.write(caso["descripcion"])
 
-            if st.button(f"▶ Ejecutar", key=caso["id"], use_container_width=True):
-                _ejecutar_caso(caso)
+            if st.button("▶ Ejecutar", key=caso["id"], use_container_width=True):
+                caso_a_ejecutar = caso
+
+    # Fuera de las columnas: todo lo siguiente ocupa el ancho completo
+    if caso_a_ejecutar:
+        resultado = _ejecutar_caso(caso_a_ejecutar)
+        # Si el mismo demo ya estaba, se descarta el anterior y queda el nuevo
+        previos = [
+            d for d in st.session_state.demos_ejecutadas
+            if d["caso"]["id"] != caso_a_ejecutar["id"]
+        ]
+        st.session_state.demos_ejecutadas = (
+            [{"caso": caso_a_ejecutar, "resultado": resultado}] + previos
+        )[:MAX_DEMOS_VISIBLES]
+
+    demos = st.session_state.demos_ejecutadas
+    if demos:
+        st.divider()
+        st.markdown("#### Resultados")
+        for i, demo in enumerate(demos):
+            caso = demo["caso"]
+            # Solo el más reciente aparece desplegado; los demás, plegados
+            with st.expander(f"{caso['label']} — {caso['badge_texto']}", expanded=(i == 0)):
+                _mostrar_resultado(
+                    demo["resultado"],
+                    badge=caso["badge"],
+                    badge_texto=caso["badge_texto"],
+                    anidado=True,
+                )
 
 def _tab_hitl():
     st.subheader("Consola de Auditoría Human-in-the-Loop")
