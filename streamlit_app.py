@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from enum import Enum
+
 import streamlit as st
 
 from app.streamlit_bridge import procesar_archivo, procesar_texto
@@ -82,6 +84,12 @@ CASOS_DEMO = [
     },
 ]
 
+def _txt(valor, usar_nombre: bool = False) -> str:
+    """Texto limpio de un Enum (o del valor tal cual si ya es str)."""
+    if isinstance(valor, Enum):
+        return valor.name if usar_nombre else str(valor.value)
+    return "—" if valor is None else str(valor)
+
 def _estilos():
     st.markdown(
         """
@@ -110,6 +118,20 @@ def _estilos():
             font-weight: 600;
             font-size: 0.9rem;
         }
+        .chip {
+            display: inline-block;
+            padding: 2px 10px;
+            margin: 4px 6px 0 0;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .chip-urgente { background-color: #fee2e2; color: #991b1b; }
+        .chip-alta    { background-color: #ffedd5; color: #9a3412; }
+        .chip-normal  { background-color: #dbeafe; color: #1e40af; }
+        .chip-baja    { background-color: #dcfce7; color: #166534; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -145,82 +167,102 @@ def _sidebar():
         st.caption("MediFlow v1.0 — MVP Hackathon")
 
 def _mostrar_resultado(resultado: dict, badge: str | None = None, badge_texto: str | None = None):
-    """Renderiza el resultado del pipeline de forma visual."""
+    """Renderiza el resultado del pipeline en una sola columna, con jerarquía de encabezados."""
 
     if badge:
         st.markdown(
             f'<span class="badge-{badge}">{badge_texto}</span>',
             unsafe_allow_html=True,
         )
-        st.write("")
 
-    # Clasificación
-    clf = resultado.get("clasificacion")
-    if clf:
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Tipo de Documento", clf.get("tipo_documento", "—"))
-        col2.metric("Prioridad", clf.get("nivel_prioridad", "—"))
-        col3.metric("Confianza", f"{clf.get('score_confianza', 0):.0%}")
+    # ── H5: Decisión (lo más importante: qué se hace con el documento) ──
+    st.markdown("##### 🚦 Decisión de Enrutamiento")
+    decision = resultado.get("decision")
+    if decision:
+        destino = _txt(decision.get("destino", "—"))
+        requiere_hitl = decision.get("requiere_revision_humana", False)
+
+        if "Emergencia" in destino:
+            st.error(f"🆘 **{destino}**")
+        elif requiere_hitl:
+            st.warning(f"👁️ **{destino}**")
+        else:
+            st.success(f"✅ **{destino}**")
+
+        st.write(f"💬 {decision.get('justificacion', '')}")
+
+        notif = decision.get("notificacion")
+        if notif:
+            st.error(f"📣 {notif.get('mensaje', '')}")
+    else:
+        st.write("Sin decisión de enrutamiento.")
 
     st.divider()
 
-    # Datos extraídos + Decisión lado a lado
-    col_datos, col_decision = st.columns([1, 1], gap="large")
+    # ── H5: Clasificación ──
+    st.markdown("##### 🗂️ Clasificación del Documento")
+    clf = resultado.get("clasificacion")
+    if clf:
+        tipo = _txt(clf.get("tipo_documento"), usar_nombre=True)
+        prioridad = _txt(clf.get("nivel_prioridad"))
+        confianza = clf.get("score_confianza", 0) or 0
+        st.markdown(
+            f"**Tipo de documento:** {tipo}<br>"
+            f'<span class="chip chip-{prioridad.lower()}">Prioridad: {prioridad}</span>'
+            f'<span class="chip">Confianza: {confianza:.0%}</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.write("Sin clasificación.")
 
-    with col_datos:
-        st.markdown("**📋 Datos Extraídos**")
-        datos = resultado.get("datos_extraidos")
-        if datos:
-            paciente = datos.get("paciente") or {}
-            medico = datos.get("medico_solicitante") or {}
+    st.divider()
 
-            st.write(f"👤 **Paciente:** {paciente.get('nombre', 'No identificado')}")
-            if paciente.get("edad"):
-                st.write(f"🎂 **Edad:** {paciente['edad']} años")
-            st.write(f"🩺 **Médico:** {medico.get('nombre', 'No identificado')}")
-            if medico.get("matricula"):
-                st.write(f"🪪 **Matrícula:** {medico['matricula']}")
+    # ── H5: Datos extraídos (una sola columna, H6 por grupo) ──
+    st.markdown("##### 📋 Datos Extraídos")
+    datos = resultado.get("datos_extraidos")
+    if datos:
+        paciente = datos.get("paciente") or {}
+        medico = datos.get("medico_solicitante") or {}
+
+        st.markdown("###### Paciente")
+        st.write(f"👤 **Nombre:** {paciente.get('nombre', 'No identificado')}")
+        if paciente.get("edad"):
+            st.write(f"🎂 **Edad:** {paciente['edad']} años")
+
+        st.markdown("###### Médico solicitante")
+        st.write(f"🩺 **Nombre:** {medico.get('nombre', 'No identificado')}")
+        if medico.get("matricula"):
+            st.write(f"🪪 **Matrícula:** {medico['matricula']}")
+
+        if datos.get("diagnostico_principal") or datos.get("cie10_sugerido"):
+            st.markdown("###### Diagnóstico")
             if datos.get("diagnostico_principal"):
-                st.write(f"🔬 **Diagnóstico:** {datos['diagnostico_principal']}")
+                st.write(f"🔬 **Principal:** {datos['diagnostico_principal']}")
             if datos.get("cie10_sugerido"):
                 st.write(f"📌 **CIE-10:** {datos['cie10_sugerido']}")
 
-            meds = datos.get("medicamentos") or []
-            if meds:
-                st.write("💊 **Medicamentos:**")
-                for m in meds:
-                    st.write(f"  - {m.get('nombre')} {m.get('dosis', '')} {m.get('frecuencia', '')}")
+        meds = datos.get("medicamentos") or []
+        if meds:
+            st.markdown("###### Medicamentos")
+            st.markdown(
+                "\n".join(
+                    f"- 💊 {m.get('nombre') or ''} {m.get('dosis') or ''} {m.get('frecuencia') or ''}".rstrip()
+                    for m in meds
+                )
+            )
 
-            hallazgos = datos.get("hallazgos_criticos") or []
-            if hallazgos:
-                for h in hallazgos:
-                    st.error(f"🚨 {h}")
+        hallazgos = datos.get("hallazgos_criticos") or []
+        if hallazgos:
+            st.markdown("###### Hallazgos críticos")
+            for h in hallazgos:
+                st.error(f"🚨 {h}")
 
-            faltantes = datos.get("campos_faltantes") or []
-            if faltantes:
-                st.warning(f"⚠️ Campos faltantes: {', '.join(faltantes)}")
-        else:
-            st.write("Sin datos extraídos.")
-
-    with col_decision:
-        st.markdown("**🚦 Decisión de Enrutamiento**")
-        decision = resultado.get("decision")
-        if decision:
-            destino = decision.get("destino", "—")
-            requiere_hitl = decision.get("requiere_revision_humana", False)
-
-            if "Emergencia" in destino:
-                st.error(f"🆘 **{destino}**")
-            elif requiere_hitl:
-                st.warning(f"👁️ **{destino}**")
-            else:
-                st.success(f"✅ **{destino}**")
-
-            st.write(f"💬 {decision.get('justificacion', '')}")
-
-            notif = decision.get("notificacion")
-            if notif:
-                st.error(f"📣 {notif.get('mensaje', '')}")
+        faltantes = datos.get("campos_faltantes") or []
+        if faltantes:
+            st.markdown("###### Campos faltantes")
+            st.warning(f"⚠️ {', '.join(faltantes)}")
+    else:
+        st.write("Sin datos extraídos.")
 
     st.divider()
     with st.expander("Ver JSON completo"):
@@ -254,7 +296,7 @@ def _tab_ingesta():
     col_input, col_output = st.columns([1, 1], gap="large")
 
     with col_input:
-        st.markdown("**1. Seleccioná el método de entrada**")
+        st.markdown("#### 1. Seleccioná el método de entrada")
 
         metodo = st.radio(
             "Método:",
@@ -275,12 +317,22 @@ def _tab_ingesta():
 
         archivo = None
         texto = ""
+        btn = False
 
         if metodo == "📎 Subir PDF o Imagen":
             archivo = st.file_uploader(
                 "Seleccioná el documento clínico:",
                 type=["pdf", "png", "jpg", "jpeg"],
             )
+
+            # El botón va ANTES de la previsualización
+            btn = st.button(
+                "🚀 Procesar con MediFlow",
+                type="primary",
+                use_container_width=True,
+                key="btn_procesar_archivo",
+            )
+
             if archivo:
                 st.caption(f"`{archivo.name}` — {round(archivo.size / 1024, 1)} KB")
                 if archivo.type.startswith("image/"):
@@ -292,15 +344,15 @@ def _tab_ingesta():
                 height=220,
                 placeholder="Ingresá el informe, receta u orden médica...",
             )
-
-        btn = st.button(
-            "🚀 Procesar con MediFlow",
-            type="primary",
-            use_container_width=True,
-        )
+            btn = st.button(
+                "🚀 Procesar con MediFlow",
+                type="primary",
+                use_container_width=True,
+                key="btn_procesar_texto",
+            )
 
     with col_output:
-        st.markdown("**2. Resultado del Agente**")
+        st.markdown("#### 2. Resultado del Agente")
 
         if not btn:
             st.info("El resultado aparecerá aquí luego de procesar.")
