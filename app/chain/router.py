@@ -180,6 +180,24 @@ def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
         ),
     )
 
+def _alinear_prioridad(estado: EstadoPipeline) -> None:
+    """
+    Si el documento va a la Cola de Emergencia, la prioridad final debe ser
+    Urgente, aunque el clasificador haya devuelto otra. Así la etiqueta en
+    pantalla, la carpeta de OCI (procesados/urgentes) y el destino coinciden.
+    """
+    if (
+        estado.decision
+        and estado.decision.destino == DestinoEnrutamiento.COLA_EMERGENCIA
+        and estado.clasificacion
+        and estado.clasificacion.nivel_prioridad != NivelPrioridad.URGENTE
+    ):
+        logger.info(
+            f"[ENRUTAR] prioridad corregida: "
+            f"{estado.clasificacion.nivel_prioridad.value} -> Urgente (hallazgo crítico)"
+        )
+        estado.clasificacion.nivel_prioridad = NivelPrioridad.URGENTE
+
 def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
     """
     Nodo 3 del pipeline.
@@ -198,6 +216,7 @@ def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
         decision = regla(estado)
         if decision is not None:
             estado.decision = decision
+            _alinear_prioridad(estado)
             logger.info(f"[ENRUTAR] → {decision.destino.value} | {decision.justificacion}")
             return estado
 

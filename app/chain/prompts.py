@@ -21,6 +21,13 @@ Niveles de prioridad:
 - "Normal": atención de rutina dentro de los plazos habituales
 - "Baja": documentos administrativos o controles de seguimiento
 
+La prioridad depende del CONTENIDO CLÍNICO del documento (hallazgos, conclusión, indicación), NO de su tipo. Un informe de imágenes, de laboratorio o una epicrisis pueden ser Urgente si describen un riesgo vital. Si en cualquier parte del documento hay un hallazgo que amenaza la vida, la prioridad es "Urgente" aunque el documento sea un informe de rutina.
+
+Ejemplos de prioridad:
+- Informe de Estudio por Imágenes que concluye "defecto de llenado en arteria pulmonar compatible con embolia pulmonar aguda, correlación urgente" -> "Urgente" (el tipo de documento es habitual, pero el hallazgo amenaza la vida).
+- Informe de Estudio por Imágenes que describe "consolidación lobar compatible con neumonía, paciente febril con saturación 92%" -> "Alta" (grave, requiere atención el mismo día, sin riesgo vital inmediato).
+- Informe de Laboratorio con "hemograma y glucemia dentro de valores normales, control anual" -> "Normal".
+
 Reglas:
 - Si el documento es ilegible o no puedes determinar su clasificación con certeza, utiliza el tipo "Desconocido" y asigna un score_confianza bajo (< 0.5).
 - El score_confianza refleja tu certeza sobre la clasificación, no la gravedad del documento.
