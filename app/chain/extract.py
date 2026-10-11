@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 
 from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -34,12 +36,13 @@ logger = logging.getLogger(__name__)
 MODELO_TEXTO  = "command-r-plus-08-2024"
 MODELO_VISION = "command-a-vision-07-2025"
 
-def _get_llm(tiene_texto: bool) -> ChatCohere:
+def _get_llm(tiene_texto: bool):
     model = MODELO_TEXTO if tiene_texto else MODELO_VISION
-    return ChatCohere(
-        model=model,
-        temperature=0.0,
-        response_format={"type": "json_object", "json_schema": SCHEMA_EXTRAER},
+    llm = ChatCohere(model=model, temperature=0.0)
+    # OJO: response_format debe ir con bind(). Si se pasa al constructor de
+    # ChatCohere, langchain-cohere lo descarta y Cohere nunca recibe el esquema.
+    return llm.bind(
+        response_format={"type": "json_object", "json_schema": SCHEMA_EXTRAER}
     )
 
 def _construir_mensajes(estado: EstadoPipeline) -> list:
@@ -55,20 +58,53 @@ def _construir_mensajes(estado: EstadoPipeline) -> list:
 
     return [system, HumanMessage(content=content)]
 
+# Textos de relleno que el modelo escribe cuando no hay dato (el esquema no le
+# permite devolver null). Nunca deben tratarse como información real.
+_RELLENOS = {
+    "null", "none", "nil", "n/a", "na", "n.a", "-", "--", "?", "??", "???",
+    "no disponible", "no especificado", "no identificado", "sin dato", "sin datos",
+    "desconocido", "ilegible", "no legible", "no aplica", "undefined",
+}
+
+def _limpiar(valor, descartar_interrogaciones: bool = False):
+    """Convierte textos de relleno ('null', '???') en None. Deja pasar lo demás."""
+    if not isinstance(valor, str):
+        return valor
+    v = valor.strip()
+    if not v or not re.search(r"\w", v):
+        return None
+    if v.lower().strip(" .:;()[]{}\"'") in _RELLENOS:
+        return None
+    # Nombres o matrículas con varios '?' (p. ej. "Dr. ???") no son datos reales
+    if descartar_interrogaciones and v.count("?") >= 2:
+        return None
+    return v
+
+def _a_lista(valor) -> list | None:
+    if isinstance(valor, str):
+        valor = [valor]
+    if not isinstance(valor, list):
+        return None
+    limpios = [x for x in (_limpiar(i) for i in valor) if isinstance(x, str)]
+    return limpios or None
+
+def _a_entero(valor) -> int | None:
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, int):
+        return valor
+    if isinstance(valor, str):
+        m = re.search(r"\d+", valor)
+        return int(m.group()) if m else None
+    return None
+
 def _parsear_respuesta(raw: str) -> DatosExtraidos:
     data = json.loads(raw)
 
-    def _a_lista(valor) -> list | None:
-        if isinstance(valor, list):
-            return valor or None
-        if isinstance(valor, str) and valor.strip():
-            return [valor]
-        return None
-
     # Paciente
-    nombre_paciente = data.get("nombre_paciente")
-    edad_paciente   = data.get("edad_paciente")
-    doc_paciente    = data.get("documento_paciente")
+    nombre_paciente = _limpiar(data.get("nombre_paciente"), True)
+    edad_paciente   = _a_entero(data.get("edad_paciente"))
+    doc_paciente    = _limpiar(data.get("documento_paciente"), True)
     paciente = Paciente(
         nombre=nombre_paciente,
         edad=edad_paciente,
@@ -76,9 +112,9 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
     ) if any([nombre_paciente, edad_paciente, doc_paciente]) else None
 
     # Médico
-    nombre_medico   = data.get("nombre_medico")
-    matricula_medico = data.get("matricula_medico")
-    especialidad_medico = data.get("especialidad_medico")
+    nombre_medico       = _limpiar(data.get("nombre_medico"), True)
+    matricula_medico    = _limpiar(data.get("matricula_medico"), True)
+    especialidad_medico = _limpiar(data.get("especialidad_medico"))
     medico = MedicoSolicitante(
         nombre=nombre_medico,
         matricula=matricula_medico,
@@ -91,21 +127,21 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         meds_raw = []
     medicamentos = [
         Medicamento(
-            nombre=med["nombre"],
-            dosis=med.get("dosis"),
-            frecuencia=med.get("frecuencia"),
-            duracion=med.get("duracion"),
+            nombre=_limpiar(med.get("nombre")),
+            dosis=_limpiar(med.get("dosis")),
+            frecuencia=_limpiar(med.get("frecuencia")),
+            duracion=_limpiar(med.get("duracion")),
         )
         for med in meds_raw
-        if isinstance(med, dict) and med.get("nombre")
+        if isinstance(med, dict) and _limpiar(med.get("nombre"))
     ] or None
 
     return DatosExtraidos(
         paciente=paciente,
         medico_solicitante=medico,
-        estudio_realizado=data.get("estudio_realizado"),
-        diagnostico_principal=data.get("diagnostico_principal"),
-        cie10_sugerido=data.get("cie10_sugerido"),
+        estudio_realizado=_limpiar(data.get("estudio_realizado")),
+        diagnostico_principal=_limpiar(data.get("diagnostico_principal")),
+        cie10_sugerido=_limpiar(data.get("cie10_sugerido")),
         medicamentos=medicamentos,
         estudios_solicitados=_a_lista(data.get("estudios_solicitados")),
         hallazgos_criticos=_a_lista(data.get("hallazgos_criticos")),
@@ -125,6 +161,10 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
         llm = _get_llm(tiene_texto)
         mensajes = _construir_mensajes(estado)
         response = llm.invoke(mensajes)
+
+        # Solo para depuración: la respuesta cruda puede contener datos del paciente
+        if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
+            logger.info(f"[EXTRAER] respuesta cruda: {response.content}")
 
         estado.datos_extraidos = _parsear_respuesta(response.content)
 

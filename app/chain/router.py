@@ -97,10 +97,16 @@ def _nombre_paciente(estado: EstadoPipeline) -> str:
         return "paciente desconocido"
 
 def _diagnostico(estado: EstadoPipeline) -> str:
-    try:
-        return estado.datos_extraidos.diagnostico_principal or "diagnóstico no disponible"
-    except AttributeError:
+    """Diagnóstico para mensajes; si falta, usa los hallazgos críticos como respaldo."""
+    datos = estado.datos_extraidos
+    if not datos:
         return "diagnóstico no disponible"
+    if datos.diagnostico_principal and datos.diagnostico_principal.strip():
+        return datos.diagnostico_principal.strip()
+    hallazgos = [h.strip() for h in (datos.hallazgos_criticos or []) if h and h.strip()]
+    if hallazgos:
+        return "; ".join(hallazgos)
+    return "diagnóstico no disponible"
 
 def _regla_error(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
     if not estado.error:

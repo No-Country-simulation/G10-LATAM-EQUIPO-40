@@ -6,14 +6,14 @@ Todos los prompts y JSON schemas para response_format en un solo lugar.
 SYSTEM_CLASIFICAR = """Eres un sistema experto en clasificación de documentos clínicos y administrativos de salud.
 Analizas el contenido del documento y determinas su tipo, especialidad médica, nivel de prioridad y nivel de confianza.
 
-Tipos de documento posibles:
-- "Receta Médica"
-- "Informe de Estudio por Imágenes"
-- "Informe de Laboratorio"
-- "Orden de Solicitud de Procedimiento"
-- "Epicrisis / Informe de Alta"
-- "Certificado Médico"
-- "Desconocido"
+Tipos de documento posibles (responde con el CÓDIGO exacto en tipo_documento):
+- RECETA_MEDICA: receta médica
+- INFORME_IMAGENES: informe de estudio por imágenes (radiografía, tomografía, ecografía, resonancia)
+- INFORME_LABORATORIO: informe de laboratorio
+- ORDEN_PROCEDIMIENTO: orden de solicitud de procedimiento
+- EPICRISIS: epicrisis o informe de alta
+- CERTIFICADO_MEDICO: certificado médico
+- DESCONOCIDO: ilegible o no clasificable
 
 Niveles de prioridad:
 - "Urgente": hallazgos que amenazan la vida (TEP, IAM, ACV, sepsis, hemorragia masiva, shock)
@@ -24,12 +24,12 @@ Niveles de prioridad:
 La prioridad depende del CONTENIDO CLÍNICO del documento (hallazgos, conclusión, indicación), NO de su tipo. Un informe de imágenes, de laboratorio o una epicrisis pueden ser Urgente si describen un riesgo vital. Si en cualquier parte del documento hay un hallazgo que amenaza la vida, la prioridad es "Urgente" aunque el documento sea un informe de rutina.
 
 Ejemplos de prioridad:
-- Informe de Estudio por Imágenes que concluye "defecto de llenado en arteria pulmonar compatible con embolia pulmonar aguda, correlación urgente" -> "Urgente" (el tipo de documento es habitual, pero el hallazgo amenaza la vida).
+- Informe de Estudio por Imágenes que concluye "defecto de llenado en arteria pulmonar compatible con embolia pulmonar aguda, correlación urgente" -> tipo INFORME_IMAGENES, prioridad "Urgente" (el tipo de documento es habitual, pero el hallazgo amenaza la vida).
 - Informe de Estudio por Imágenes que describe "consolidación lobar compatible con neumonía, paciente febril con saturación 92%" -> "Alta" (grave, requiere atención el mismo día, sin riesgo vital inmediato).
 - Informe de Laboratorio con "hemograma y glucemia dentro de valores normales, control anual" -> "Normal".
 
 Reglas:
-- Si el documento es ilegible o no puedes determinar su clasificación con certeza, utiliza el tipo "Desconocido" y asigna un score_confianza bajo (< 0.5).
+- Si el documento es ilegible o no puedes determinar su clasificación con certeza, utiliza el tipo DESCONOCIDO y asigna un score_confianza bajo (< 0.5).
 - El score_confianza refleja tu certeza sobre la clasificación, no la gravedad del documento.
 - Responde únicamente con el JSON solicitado, sin texto adicional."""
 
@@ -45,13 +45,13 @@ SCHEMA_CLASIFICAR = {
         "tipo_documento": {
             "type": "string",
             "enum": [
-                "Receta Médica",
-                "Informe de Estudio por Imágenes",
-                "Informe de Laboratorio",
-                "Orden de Solicitud de Procedimiento",
-                "Epicrisis / Informe de Alta",
-                "Certificado Médico",
-                "Desconocido",
+                "RECETA_MEDICA",
+                "INFORME_IMAGENES",
+                "INFORME_LABORATORIO",
+                "ORDEN_PROCEDIMIENTO",
+                "EPICRISIS",
+                "CERTIFICADO_MEDICO",
+                "DESCONOCIDO",
             ],
         },
         "especialidad": {"type": "string"},
@@ -64,19 +64,19 @@ SCHEMA_CLASIFICAR = {
     "required": ["tipo_documento", "nivel_prioridad", "score_confianza"],
 }
 
-SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas. Tu única tarea es leer el documento y completar el JSON con TODOS los datos que encuentres.
+SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas. Tu única tarea es leer el documento y completar el JSON con los datos que encuentres.
 
 REGLAS ESTRICTAS:
 - Extrae EXACTAMENTE lo que está escrito, sin inventar.
-- Si el dato está en el documento → ponlo en el campo correspondiente.
-- Si el dato NO está → null.
-- nombre del paciente: busca "Paciente:", nombres propios, "Sr.", "Sra."
-- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:"
+- Si un dato NO aparece o es ilegible, OMITE ese campo. Nunca escribas "null", "N/A", "???" ni texto de relleno.
+- nombre del paciente: busca "Paciente:", nombres propios, "Sr.", "Sra.".
+- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:".
 - matrícula: busca "MP", "Reg", "Matrícula", número junto al nombre del médico.
-- diagnóstico: busca "Diagnóstico:", "Dx:", "Conclusión:", "compatible con".
-- medicamentos: busca nombres de fármacos con dosis.
-- hallazgos_criticos: SOLO si hay riesgo vital explícito (TEP, IAM, ACV, sepsis, hemorragia, shock).
-- campos_faltantes: lista los campos importantes que NO encontraste.
+- diagnostico_principal: busca "Diagnóstico:", "Dx:", "Conclusión:", "compatible con". En informes de imágenes o de laboratorio, toma el diagnóstico de la CONCLUSIÓN. Si es dudoso o ilegible, omítelo.
+- medicamentos: nombres de fármacos con dosis.
+- estudios_solicitados: solo si el documento SOLICITA estudios (órdenes). No repitas aquí el estudio realizado.
+- hallazgos_criticos: SOLO si hay riesgo vital explícito (TEP, IAM, ACV, sepsis, hemorragia, shock). Si no hay, devuelve una lista vacía [].
+- campos_faltantes: solo campos importantes que NO encontraste Y que corresponden a este tipo de documento (por ejemplo, "medicamentos" solo aplica a recetas; en un informe de imágenes no lo listes).
 - Responde ÚNICAMENTE con el JSON, sin texto adicional."""
 
 PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente documento:

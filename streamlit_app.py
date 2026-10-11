@@ -5,6 +5,7 @@ Demo visual del agente autónomo de triaje clínico.
 
 from __future__ import annotations
 
+import logging
 import time
 
 from dotenv import load_dotenv
@@ -16,6 +17,16 @@ from enum import Enum
 import streamlit as st
 
 from app.streamlit_bridge import procesar_archivo, procesar_texto
+
+# Streamlit no configura el logging de la app: sin esto, los logger.info() de
+# app.chain.* (clasificar, extraer, enrutar) no aparecen en la consola.
+_log_app = logging.getLogger("app")
+if not _log_app.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _log_app.addHandler(_h)
+    _log_app.setLevel(logging.INFO)
+
 
 st.set_page_config(
     page_title="MediFlow — Triaje Clínico",
