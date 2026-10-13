@@ -1,0 +1,142 @@
+name: Build and Deploy MediFlow
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and Deploy to OCI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build Podman image
+        run: |
+          podman build \
+            -f Containerfile \
+            -t "localhost/mediflow:${GITHUB_SHA}" \
+            .
+
+      - name: Export Podman image
+        run: |
+          podman save "localhost/mediflow:${GITHUB_SHA}" \
+            | gzip > mediflow.tar.gz
+
+      - name: Prepare deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            set -eu
+            mkdir -p "$HOME/mediflow"
+
+      - name: Copy image to Oracle Cloud
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          source: mediflow.tar.gz
+          target: /home/opc/mediflow/
+
+      - name: Deploy with health check and rollback
+        uses: appleboy/ssh-action@v1
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          envs: IMAGE_TAG
+          script: |
+            set -eu
+
+            DEPLOY_DIR="$HOME/mediflow"
+            IMAGE="localhost/mediflow:${IMAGE_TAG}"
+            BACKUP_FILE="$DEPLOY_DIR/previous-image"
+
+            cd "$DEPLOY_DIR"
+
+            echo "Loading new image..."
+            podman load -i mediflow.tar.gz
+
+            # Guardar la imagen anterior para rollback.
+            PREVIOUS_IMAGE=""
+            if podman container exists mediflow; then
+              PREVIOUS_IMAGE=$(podman inspect \
+                --format '{{.Image}}' mediflow)
+            fi
+
+            echo "Stopping previous container..."
+            podman stop mediflow || true
+            podman rm mediflow || true
+
+            echo "Starting new container..."
+            podman run -d \
+              --name mediflow \
+              --restart=unless-stopped \
+              -p 8501:8501 \
+              "$IMAGE"
+
+            echo "Waiting for application health..."
+
+            HEALTHY=0
+            for i in $(seq 1 30); do
+              if podman exec mediflow python -c \
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2)" \
+                >/dev/null 2>&1; then
+                HEALTHY=1
+                break
+              fi
+
+              if ! podman container exists mediflow || \
+                 [ "$(podman inspect -f '{{.State.Running}}' mediflow 2>/dev/null || echo false)" != "true" ]; then
+                break
+              fi
+
+              sleep 2
+            done
+
+            if [ "$HEALTHY" -eq 1 ]; then
+              echo "Deployment successful."
+              rm -f mediflow.tar.gz "$BACKUP_FILE"
+              podman ps --filter name=mediflow
+              exit 0
+            fi
+
+            echo "Health check failed. Rolling back..."
+            podman logs mediflow || true
+            podman stop mediflow || true
+            podman rm mediflow || true
+
+            if [ -n "$PREVIOUS_IMAGE" ]; then
+              echo "Restoring previous image: $PREVIOUS_IMAGE"
+              podman run -d \
+                --name mediflow \
+                --restart=unless-stopped \
+                -p 8501:8501 \
+                "$PREVIOUS_IMAGE"
+
+              echo "Rollback executed. Verify previous container health."
+            else
+              echo "No previous image available. Deployment failed."
+            fi
+
+            rm -f mediflow.tar.gz
+            exit 1
