@@ -10,12 +10,11 @@ dependencies = [
     "langchain-core>=1.6.4",
     "oci>=2.187.2",
     "pdfplumber>=0.11.10",
-    "python-dotenv>=1.2.3",
+    "python-dotenv>=1.2.4",
     "streamlit>=1.64.0",
 ]
 
 [dependency-groups]
 dev = [
     "ipykernel>=7.3.0",
-    "python-dotenv>=1.2.3",
 ]
