@@ -8,15 +8,15 @@ Analizas el contenido del documento y determinas su tipo, especialidad médica, 
 
 Tipos de documento posibles (responde con el CÓDIGO exacto en tipo_documento):
 - RECETA_MEDICA: receta médica
-- INFORME_IMAGENES: informe de estudio por imágenes (radiografía, tomografía, ecografía, resonancia)
+- INFORME_IMAGENES: el documento ES el informe de un estudio de imágenes (radiografía, tomografía, ecografía, resonancia). Si solo menciona una imagen dentro de un resumen de hospitalización, no lo es
 - INFORME_LABORATORIO: informe de laboratorio
 - ORDEN_PROCEDIMIENTO: orden de solicitud de procedimiento
-- EPICRISIS: epicrisis o informe de alta
+- EPICRISIS: epicrisis o informe de alta: resumen de una hospitalización (títulos como "Epicrisis", "Resumen de egreso", "Diagnóstico de egreso", fechas de ingreso y egreso, evolución por días), aunque mencione estudios y medicamentos
 - CERTIFICADO_MEDICO: certificado médico
 - DESCONOCIDO: ilegible o no clasificable
 
 Niveles de prioridad:
-- "Urgente": hallazgos que amenazan la vida (TEP, IAM, ACV, sepsis, hemorragia masiva, shock)
+- "Urgente": hallazgos que amenazan la vida (TEP, IAM, ACV, sepsis, hemorragia masiva, shock, neumotórax a tensión) o resultados de laboratorio que el propio documento marca como CRÍTICOS. Un diagnóstico descartado ("se descarta TEP") no cuenta
 - "Alta": patologías graves que requieren atención durante el mismo día
 - "Normal": atención de rutina dentro de los plazos habituales
 - "Baja": documentos administrativos o controles de seguimiento
@@ -30,6 +30,7 @@ Ejemplos de prioridad:
 
 Reglas:
 - Si el documento es ilegible o no puedes determinar su clasificación con certeza, utiliza el tipo DESCONOCIDO y asigna un score_confianza bajo (< 0.5).
+- Clasifica por la naturaleza del documento completo (su título y estructura), no por los estudios o medicamentos que mencione.
 - El score_confianza refleja tu certeza sobre la clasificación, no la gravedad del documento.
 - Responde únicamente con el JSON solicitado, sin texto adicional."""
 
@@ -67,16 +68,17 @@ SCHEMA_CLASIFICAR = {
 SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas. Tu única tarea es leer el documento y completar el JSON con los datos que encuentres.
 
 REGLAS ESTRICTAS:
-- Extrae EXACTAMENTE lo que está escrito, sin inventar.
+- Extrae EXACTAMENTE lo que está escrito. NUNCA inventes datos ni uses valores de ejemplo (como 123456789 o 12345).
 - Si un dato NO aparece o es ilegible, OMITE ese campo. Nunca escribas "null", "N/A", "???" ni texto de relleno.
+- Lee todas las páginas: el médico, su matrícula y el diagnóstico de egreso suelen estar en la última.
 - nombre del paciente: busca "Paciente:", nombres propios, "Sr.", "Sra.".
-- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:".
-- matrícula: busca "MP", "Reg", "Matrícula", número junto al nombre del médico.
-- diagnostico_principal: busca "Diagnóstico:", "Dx:", "Conclusión:", "compatible con". En informes de imágenes o de laboratorio, toma el diagnóstico de la CONCLUSIÓN. Si es dudoso o ilegible, omítelo.
-- medicamentos: nombres de fármacos con dosis.
-- estudios_solicitados: solo si el documento SOLICITA estudios (órdenes). No repitas aquí el estudio realizado.
-- hallazgos_criticos: SOLO si hay riesgo vital explícito (TEP, IAM, ACV, sepsis, hemorragia, shock). Si no hay, devuelve una lista vacía [].
-- campos_faltantes: solo campos importantes que NO encontraste Y que corresponden a este tipo de documento (por ejemplo, "medicamentos" solo aplica a recetas; en un informe de imágenes no lo listes).
+- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:". Matrícula: "MP", "Reg", "Matrícula", junto al nombre o sello del médico.
+- diagnostico_principal: UNA línea breve (máximo 15 palabras) con la entidad clínica, no el párrafo completo. Búscala en "Diagnóstico:", "Dx:", "Conclusión:", "Diagnóstico de egreso", "compatible con". Si es dudoso o ilegible, omítelo. La indicación clínica de una orden no es un diagnóstico.
+- estudio_realizado: solo si el documento reporta el resultado de un estudio ya hecho (informe de imágenes o de laboratorio). En recetas, órdenes o epicrisis no lo completes.
+- estudios_solicitados: el procedimiento o estudio pedido en órdenes y solicitudes (por ejemplo, "Colonoscopia"). No repitas aquí un estudio realizado.
+- medicamentos: nombre, dosis (por ejemplo "10 mg"), frecuencia (por ejemplo "cada 12 horas") y duración, por separado.
+- hallazgos_criticos: solo hallazgos que el documento AFIRME y que impliquen riesgo vital inmediato (TEP, IAM, ACV, sepsis, hemorragia masiva, shock, neumotórax a tensión), o resultados que el propio documento marque como CRÍTICOS (por ejemplo, un valor de laboratorio señalado "CRÍTICO"). Cada uno en menos de 12 palabras. NO incluyas diagnósticos descartados ("se descarta X"), valores normales o levemente alterados, fracturas u otros hallazgos no vitales, ni notas administrativas como "se comunicó por teléfono". Si no hay, devuelve una lista vacía [].
+- campos_faltantes: solo campos importantes que NO encontraste Y que corresponden a este tipo de documento.
 - Responde ÚNICAMENTE con el JSON, sin texto adicional."""
 
 PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente documento:

@@ -78,6 +78,10 @@ def _limpiar(valor, descartar_interrogaciones: bool = False):
         return None
     if v.lower().strip(" .:;()[]{}\"'") in _RELLENOS:
         return None
+    # Números de ejemplo que el modelo inventa cuando no ve el dato (12345, 123456789, 0000...)
+    solo_digitos = re.sub(r"[\s.\-]", "", v)
+    if re.fullmatch(r"0+|(\d)\1{3,}|1234\d{0,5}", solo_digitos):
+        return None
     # Nombres o matrículas con varios '?' (p. ej. "Dr. ???") no son datos reales
     if descartar_interrogaciones and v.count("?") >= 2:
         return None

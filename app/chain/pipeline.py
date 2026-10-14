@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+from app.chain.transcribe import nodo_transcribir, ocr_primero_activado
 from app.chain.classify import nodo_clasificar
 from app.chain.extract import nodo_extraer
 from app.chain.router import nodo_enrutar, UMBRAL_CONFIANZA_BAJA
@@ -87,6 +88,11 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
         estado = _nodo_revision_humana(estado)
         logger.info(f"[PIPELINE] ══ Completado: {estado.documento_id} → {estado.decision.destino.value} ══")
         return estado
+
+    # Opcional: transcribir primero los documentos escaneados (MEDIFLOW_OCR_PRIMERO=1)
+    sin_texto = not (estado.texto and estado.texto.strip())
+    if ocr_primero_activado() and estado.imagenes_data_url and sin_texto:
+        estado = nodo_transcribir(estado)
 
     # Nodo 1: Clasificar
     estado = nodo_clasificar(estado)

@@ -14,6 +14,8 @@ Orden de precedencia:
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 
 from app.models.schemas import (
     DecisionEnrutamiento,
@@ -41,6 +43,12 @@ KEYWORDS_CRITICOS = {
     "edema agudo de pulmon", "cetoacidosis",
 }
 
+# Palabras completas, sin tildes ("neumotórax" coincide con "neumotorax"; "iam" no coincide dentro de otras palabras)
+_KW_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in sorted(KEYWORDS_CRITICOS, key=len, reverse=True)) + r")\b"
+)
+_MAX_RESUMEN = 80
+
 DESTINO_POR_TIPO: dict[TipoDocumento, DestinoEnrutamiento] = {
     TipoDocumento.RECETA_MEDICA:       DestinoEnrutamiento.FARMACIA,
     TipoDocumento.INFORME_IMAGENES:    DestinoEnrutamiento.HISTORIA_CLINICA,
@@ -54,26 +62,44 @@ DESTINO_POR_TIPO: dict[TipoDocumento, DestinoEnrutamiento] = {
 def _score(estado: EstadoPipeline) -> float:
     return estado.clasificacion.score_confianza if estado.clasificacion else 0.0
 
+def _norm(texto: str) -> str:
+    """Minúsculas y sin tildes."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", texto.lower()) if not unicodedata.combining(c)
+    )
+
+def _acortar(texto: str, n: int = _MAX_RESUMEN) -> str:
+    texto = " ".join(texto.split())
+    return texto if len(texto) <= n else texto[: n - 1].rstrip() + "…"
+
+def _hallazgos_validos(estado: EstadoPipeline) -> list[str]:
+    if not estado.datos_extraidos:
+        return []
+    return [h.strip() for h in (estado.datos_extraidos.hallazgos_criticos or []) if h and h.strip()]
+
 def _tiene_hallazgo_critico(estado: EstadoPipeline) -> bool:
+    """Señal de riesgo vital en la extracción (lista de hallazgos o palabras clave)."""
     if not estado.datos_extraidos:
         return False
-
-    # Lista explícita de hallazgos críticos
-    hallazgos = estado.datos_extraidos.hallazgos_criticos or []
-    if any(h and h.strip() for h in hallazgos):
+    if _hallazgos_validos(estado):
         return True
-
-    # Keywords en diagnóstico y estudio
     textos = [
         estado.datos_extraidos.diagnostico_principal or "",
         estado.datos_extraidos.estudio_realizado or "",
     ]
-    for texto in textos:
-        texto_norm = texto.lower()
-        if any(kw in texto_norm for kw in KEYWORDS_CRITICOS):
-            return True
+    return any(_KW_RE.search(_norm(t)) for t in textos)
 
-    return False
+def _detalle_sospecha(estado: EstadoPipeline) -> str:
+    """Qué disparó la señal crítica, para mostrarlo al revisor."""
+    hallazgos = _hallazgos_validos(estado)
+    if hallazgos:
+        return "; ".join(_acortar(h, 60) for h in hallazgos[:2])
+    datos = estado.datos_extraidos
+    for texto in (datos.diagnostico_principal or "", datos.estudio_realizado or ""):
+        m = _KW_RE.search(_norm(texto))
+        if m:
+            return f"mención de '{m.group(0)}'"
+    return "señal crítica no especificada"
 
 def _tiene_campos_faltantes(estado: EstadoPipeline) -> bool:
     if not estado.datos_extraidos:
@@ -96,17 +122,18 @@ def _nombre_paciente(estado: EstadoPipeline) -> str:
     except AttributeError:
         return "paciente desconocido"
 
-def _diagnostico(estado: EstadoPipeline) -> str:
-    """Diagnóstico para mensajes; si falta, usa los hallazgos críticos como respaldo."""
+def _resumen_critico(estado: EstadoPipeline) -> str | None:
+    """Texto corto para la alerta: diagnóstico breve, o el primer hallazgo; None si no hay."""
     datos = estado.datos_extraidos
     if not datos:
-        return "diagnóstico no disponible"
-    if datos.diagnostico_principal and datos.diagnostico_principal.strip():
-        return datos.diagnostico_principal.strip()
-    hallazgos = [h.strip() for h in (datos.hallazgos_criticos or []) if h and h.strip()]
+        return None
+    dx = (datos.diagnostico_principal or "").strip()
+    if dx and len(dx) <= _MAX_RESUMEN:
+        return dx
+    hallazgos = _hallazgos_validos(estado)
     if hallazgos:
-        return "; ".join(hallazgos)
-    return "diagnóstico no disponible"
+        return _acortar(hallazgos[0])
+    return _acortar(dx) if dx else None
 
 def _regla_error(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
     if not estado.error:
@@ -127,29 +154,56 @@ def _regla_confianza_baja(estado: EstadoPipeline) -> DecisionEnrutamiento | None
         justificacion=f"Score de confianza bajo ({score:.0%}). Requiere validación manual.",
     )
 
+def _decision_emergencia(estado: EstadoPipeline) -> DecisionEnrutamiento:
+    paciente = _nombre_paciente(estado)
+    resumen = _resumen_critico(estado)
+
+    if resumen:
+        justificacion = f"Hallazgo crítico ({resumen}) en {paciente}."
+        mensaje = f"⚠️ ALERTA URGENTE: {resumen} — {paciente} — {estado.canal_origen}"
+    else:
+        tipo = estado.clasificacion.tipo_documento.value if estado.clasificacion else "Documento"
+        justificacion = f"{tipo} clasificado como Urgente en {paciente}; no se extrajo un hallazgo específico."
+        mensaje = (
+            f"⚠️ ALERTA URGENTE: {tipo} clasificado como Urgente — {paciente} — "
+            f"{estado.canal_origen}. Revisar el documento."
+        )
+
+    return DecisionEnrutamiento(
+        destino=DestinoEnrutamiento.COLA_EMERGENCIA,
+        requiere_revision_humana=False,
+        justificacion=justificacion,
+        notificacion=Notificacion(canal="Alerta_Guardia_Medica", mensaje=mensaje),
+    )
+
 def _regla_urgencia(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
+    """
+    Regla de cruce (dos señales independientes):
+      - La clasificación dice Urgente            -> Cola de Emergencia.
+      - Hay hallazgo crítico pero la clasificación
+        NO dice Urgente (señales que discrepan)  -> revisión humana, no alarma automática.
+    Evita que un hallazgo mal extraído dispare una alerta a guardia por sí solo.
+    """
     prioridad = (
         estado.clasificacion.nivel_prioridad
         if estado.clasificacion
         else NivelPrioridad.NORMAL
     )
-    critico = _tiene_hallazgo_critico(estado)
 
-    if not critico and prioridad != NivelPrioridad.URGENTE:
-        return None
+    if prioridad == NivelPrioridad.URGENTE:
+        return _decision_emergencia(estado)
 
-    paciente = _nombre_paciente(estado)
-    dx = _diagnostico(estado)
+    if _tiene_hallazgo_critico(estado):
+        return DecisionEnrutamiento(
+            destino=DestinoEnrutamiento.REVISION_HUMANA,
+            requiere_revision_humana=True,
+            justificacion=(
+                f"Posible hallazgo crítico sin prioridad urgente en la clasificación "
+                f"({_detalle_sospecha(estado)}). Requiere validación humana."
+            ),
+        )
 
-    return DecisionEnrutamiento(
-        destino=DestinoEnrutamiento.COLA_EMERGENCIA,
-        requiere_revision_humana=False,
-        justificacion=f"Hallazgo crítico ({dx}) en {paciente}.",
-        notificacion=Notificacion(
-            canal="Alerta_Guardia_Medica",
-            mensaje=f"⚠️ ALERTA URGENTE: {dx} — {paciente} — {estado.canal_origen}",
-        ),
-    )
+    return None
 
 def _regla_auditoria(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
     score = _score(estado)
@@ -191,24 +245,6 @@ def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
         ),
     )
 
-def _alinear_prioridad(estado: EstadoPipeline) -> None:
-    """
-    Si el documento va a la Cola de Emergencia, la prioridad final debe ser
-    Urgente, aunque el clasificador haya devuelto otra. Así la etiqueta en
-    pantalla, la carpeta de OCI (procesados/urgentes) y el destino coinciden.
-    """
-    if (
-        estado.decision
-        and estado.decision.destino == DestinoEnrutamiento.COLA_EMERGENCIA
-        and estado.clasificacion
-        and estado.clasificacion.nivel_prioridad != NivelPrioridad.URGENTE
-    ):
-        logger.info(
-            f"[ENRUTAR] prioridad corregida: "
-            f"{estado.clasificacion.nivel_prioridad.value} -> Urgente (hallazgo crítico)"
-        )
-        estado.clasificacion.nivel_prioridad = NivelPrioridad.URGENTE
-
 def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
     """
     Nodo 3 del pipeline.
@@ -227,7 +263,6 @@ def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
         decision = regla(estado)
         if decision is not None:
             estado.decision = decision
-            _alinear_prioridad(estado)
             logger.info(f"[ENRUTAR] → {decision.destino.value} | {decision.justificacion}")
             return estado
 
