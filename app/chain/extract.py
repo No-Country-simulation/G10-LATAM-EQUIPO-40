@@ -24,6 +24,8 @@ from app.models.schemas import (
     MedicoSolicitante,
     Paciente,
 )
+from app.chain.llm_utils import invocar_con_reintentos
+from app.models.enums import TipoDocumento
 from app.chain.prompts import (
     SYSTEM_EXTRAER,
     PROMPT_EXTRAER_TEXTO,
@@ -64,6 +66,7 @@ _RELLENOS = {
     "null", "none", "nil", "n/a", "na", "n.a", "-", "--", "?", "??", "???",
     "no disponible", "no especificado", "no identificado", "sin dato", "sin datos",
     "desconocido", "ilegible", "no legible", "no aplica", "undefined",
+    "firma ilegible", "sin firma", "en blanco", "no consta",
 }
 
 def _limpiar(valor, descartar_interrogaciones: bool = False):
@@ -148,6 +151,41 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         campos_faltantes=_a_lista(data.get("campos_faltantes")),
     )
 
+# Campos obligatorios por tipo de documento. La lista de faltantes se calcula en
+# código a partir de lo realmente extraído: la que declara el modelo no es confiable.
+_OBLIGATORIOS: dict[TipoDocumento, list[str]] = {
+    TipoDocumento.RECETA_MEDICA:       ["paciente", "médico", "matrícula", "medicamentos"],
+    TipoDocumento.INFORME_IMAGENES:    ["paciente", "médico", "estudio realizado", "diagnóstico"],
+    TipoDocumento.INFORME_LABORATORIO: ["paciente", "médico", "estudio realizado"],
+    TipoDocumento.ORDEN_PROCEDIMIENTO: ["paciente", "médico", "matrícula", "estudios solicitados"],
+    TipoDocumento.EPICRISIS:           ["paciente", "médico", "diagnóstico"],
+    TipoDocumento.CERTIFICADO_MEDICO:  ["paciente", "médico", "matrícula"],
+    TipoDocumento.DESCONOCIDO:         ["paciente", "médico"],
+}
+
+def _presente(datos: DatosExtraidos, campo: str) -> bool:
+    pac, med = datos.paciente, datos.medico_solicitante
+    if campo == "paciente":
+        return bool(pac and pac.nombre)
+    if campo == "médico":
+        return bool(med and med.nombre)
+    if campo == "matrícula":
+        return bool(med and med.matricula)
+    if campo == "estudio realizado":
+        return bool(datos.estudio_realizado)
+    if campo == "diagnóstico":
+        return bool(datos.diagnostico_principal or datos.hallazgos_criticos)
+    if campo == "medicamentos":
+        return bool(datos.medicamentos)
+    if campo == "estudios solicitados":
+        return bool(datos.estudios_solicitados)
+    return True
+
+def calcular_faltantes(datos: DatosExtraidos, tipo: TipoDocumento) -> list[str] | None:
+    obligatorios = _OBLIGATORIOS.get(tipo, _OBLIGATORIOS[TipoDocumento.DESCONOCIDO])
+    faltantes = [c for c in obligatorios if not _presente(datos, c)]
+    return faltantes or None
+
 def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
     """
     Nodo 2 del pipeline.
@@ -160,13 +198,20 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
     try:
         llm = _get_llm(tiene_texto)
         mensajes = _construir_mensajes(estado)
-        response = llm.invoke(mensajes)
+        response = invocar_con_reintentos(llm, mensajes)
 
         # Solo para depuración: la respuesta cruda puede contener datos del paciente
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
             logger.info(f"[EXTRAER] respuesta cruda: {response.content}")
 
         estado.datos_extraidos = _parsear_respuesta(response.content)
+
+        tipo = (
+            estado.clasificacion.tipo_documento
+            if estado.clasificacion
+            else TipoDocumento.DESCONOCIDO
+        )
+        estado.datos_extraidos.campos_faltantes = calcular_faltantes(estado.datos_extraidos, tipo)
 
         paciente_nombre = (
             estado.datos_extraidos.paciente.nombre

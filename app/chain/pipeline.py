@@ -82,6 +82,12 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
     """
     logger.info(f"[PIPELINE] ══ Iniciando triaje: {estado.documento_id} ══")
 
+    if estado.error:
+        # Error previo (p. ej. archivo ilegible): no gastar llamadas al modelo
+        estado = _nodo_revision_humana(estado)
+        logger.info(f"[PIPELINE] ══ Completado: {estado.documento_id} → {estado.decision.destino.value} ══")
+        return estado
+
     # Nodo 1: Clasificar
     estado = nodo_clasificar(estado)
 

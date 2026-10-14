@@ -2,45 +2,44 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 from pathlib import Path
 
 import pdfplumber
 
+from app.ingest.image_loader import _normalizar_imagen
 
-def pdf_a_imagenes_base64(path: str, dpi: int = 150) -> list[str]:
-    """
-    Convierte cada página del PDF en una imagen base64 (PNG).
-    Útil para PDFs escaneados o cuando queremos visión multimodal.
-    Requiere: pdf2image + poppler instalado.
-    """
-    try:
-        from pdf2image import convert_from_path  # type: ignore
+logger = logging.getLogger(__name__)
 
-        imagenes = convert_from_path(path, dpi=dpi)
-        resultado: list[str] = []
-        for img in imagenes:
+MAX_PAGINAS_IMAGEN = 3   # los nodos del pipeline usan como máximo 3 imágenes
+UMBRAL_TEXTO_MIN = 100   # menos caracteres que esto = PDF escaneado
+
+
+def pdf_a_imagenes_base64(path: str, dpi: int = 150, max_paginas: int = MAX_PAGINAS_IMAGEN) -> list[str]:
+    """
+    Convierte las primeras páginas del PDF en imágenes (data URL JPEG).
+    Usa pdfplumber (pypdfium2): no requiere pdf2image ni poppler.
+    """
+    resultado: list[str] = []
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages[:max_paginas]:
+            img = _normalizar_imagen(page.to_image(resolution=dpi).original)
             buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
+            img.save(buffer, format="JPEG", quality=88)
             b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            resultado.append(f"data:image/png;base64,{b64}")
-        return resultado
-    except ImportError:
-        raise RuntimeError(
-            "pdf2image no está instalado. Instala con: pip install pdf2image\n"
-            "También necesitas poppler: https://poppler.freedesktop.org/"
-        )
+            resultado.append(f"data:image/jpeg;base64,{b64}")
+    return resultado
 
 
 def procesar_pdf(path: str) -> dict[str, str | list[str]]:
     """
     Punto de entrada principal para PDFs.
     Devuelve:
-      - texto: str (puede ser vacío si es escaneado)
-      - imagenes_data_url: list[str] (data URLs, vacío si el PDF tiene texto nativo)
-      - modo: "texto" | "imagen" | "mixto" | "error"
+      - texto: str (vacío si es escaneado)
+      - imagenes_data_url: list[str] (solo si el PDF es escaneado)
+      - modo: "texto" | "imagen" | "error"
     """
     path = str(Path(path).resolve())
-    imagenes: list[str] = []
 
     textos: list[str] = []
     with pdfplumber.open(path) as pdf:
@@ -48,27 +47,25 @@ def procesar_pdf(path: str) -> dict[str, str | list[str]]:
             t = page.extract_text() or ""
             if t.strip():
                 textos.append(f"[Página {i + 1}]\n{t.strip()}")
-
     texto = "\n\n".join(textos)
 
-    if texto.strip():
-        # PDF con texto nativo
-        if len(texto.strip()) < 100:
-            # Texto muy corto: probablemente mixto
-            try:
-                imagenes = pdf_a_imagenes_base64(path)
-                modo = "mixto"
-            except RuntimeError:
-                modo = "texto"
-        else:
-            modo = "texto"
-    else:
-        # PDF escaneado: convertir a imágenes
-        try:
-            imagenes = pdf_a_imagenes_base64(path)
-            modo = "imagen"
-        except RuntimeError:
-            texto = "[ERROR] PDF escaneado sin pdf2image disponible."
-            modo = "error"
+    if len(texto.strip()) >= UMBRAL_TEXTO_MIN:
+        return {"texto": texto, "imagenes_data_url": [], "modo": "texto"}
 
-    return {"texto": texto, "imagenes_data_url": imagenes, "modo": modo}
+    # Poco o ningún texto: escaneado. Se usan las imágenes y se descarta el texto
+    # residual, para que el modelo de visión lea la página completa.
+    try:
+        imagenes = pdf_a_imagenes_base64(path)
+    except Exception as e:
+        logger.error(f"[PDF] No se pudo convertir a imágenes: {e}")
+        imagenes = []
+
+    if imagenes:
+        return {"texto": "", "imagenes_data_url": imagenes, "modo": "imagen"}
+    if texto.strip():
+        return {"texto": texto, "imagenes_data_url": [], "modo": "texto"}
+    return {
+        "texto": "No se pudo leer el PDF: no tiene texto y no se pudo convertir a imagen.",
+        "imagenes_data_url": [],
+        "modo": "error",
+    }

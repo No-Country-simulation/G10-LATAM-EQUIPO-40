@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -16,6 +17,7 @@ from enum import Enum
 
 import streamlit as st
 
+from app.storage.revision import leer_objeto, listar_pendientes, registrar_revision
 from app.streamlit_bridge import procesar_archivo, procesar_texto
 
 # Streamlit no configura el logging de la app: sin esto, los logger.info() de
@@ -153,6 +155,13 @@ def _inicializar_estado():
         st.session_state.cola_hitl = []
     if "demos_ejecutadas" not in st.session_state:
         st.session_state.demos_ejecutadas = []  # más reciente primero
+    if "cola_cargada" not in st.session_state:
+        # Una vez por sesión: recupera de OCI los expedientes aún sin revisar
+        st.session_state.cola_cargada = True
+        try:
+            st.session_state.cola_hitl.extend(listar_pendientes())
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"No se pudo cargar la cola HITL: {e}")
 
 def _sidebar():
     with st.sidebar:
@@ -471,12 +480,68 @@ def _tab_casos():
                     anidado=True,
                 )
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cargar_original(ruta: str):
+    return leer_objeto(ruta)
+
+
+def _mostrar_original(ruta: str | None, clave: str):
+    if not ruta:
+        st.caption("Documento original no disponible.")
+        return
+    datos = _cargar_original(ruta)
+    if not datos:
+        st.caption("No se pudo recuperar el documento original.")
+        return
+    ext = Path(ruta).suffix.lower()
+    if ext in (".jpg", ".jpeg", ".png", ".webp"):
+        try:
+            st.image(datos, width="stretch")
+        except Exception:
+            # Justo los archivos dañados son los que llegan a revisión humana
+            st.warning("El archivo no se puede previsualizar (posiblemente está dañado).")
+            st.download_button(
+                "⬇️ Descargar archivo original", datos,
+                file_name=Path(ruta).name, key=f"dlraw_{clave}",
+            )
+    elif ext == ".pdf":
+        st.download_button(
+            "📄 Descargar PDF original", datos,
+            file_name=f"{clave}.pdf", mime="application/pdf", key=f"dl_{clave}",
+        )
+    elif ext == ".txt":
+        st.text_area(
+            "Texto original", datos.decode("utf-8", "replace"),
+            height=160, disabled=True, key=f"txt_{clave}",
+        )
+
+
+def _resolver_expediente(idx: int, doc_id: str, decision: str):
+    res = registrar_revision(doc_id, decision)
+    st.session_state.cola_hitl.pop(idx)
+    if res["status"] == "exito":
+        st.session_state.mensaje_hitl = ("ok", f"Expediente {doc_id} {decision}. Registrado en OCI.")
+    else:
+        st.session_state.mensaje_hitl = (
+            "warn", f"Expediente {doc_id} {decision}, pero el registro quedó solo en local ({res['status']}).",
+        )
+    st.rerun()
+
+
 def _tab_hitl():
     st.subheader("Consola de Auditoría Human-in-the-Loop")
     st.markdown(
         "Documentos con **score de confianza bajo** o "
         "**campos críticos faltantes** retenidos para revisión."
     )
+
+    msg = st.session_state.pop("mensaje_hitl", None)
+    if msg:
+        (st.success if msg[0] == "ok" else st.warning)(msg[1])
+
+    if st.button("🔄 Recargar cola desde OCI", key="recargar_cola"):
+        st.session_state.cola_hitl = listar_pendientes()
+        st.rerun()
 
     cola = st.session_state.cola_hitl
 
@@ -485,6 +550,7 @@ def _tab_hitl():
         return
 
     for idx, item in enumerate(cola):
+        doc_id = item.get("documento_id") or f"sin_id_{idx}"
         with st.container(border=True):
             clf = item.get("clasificacion") or {}
             datos = item.get("datos_extraidos") or {}
@@ -492,11 +558,12 @@ def _tab_hitl():
 
             paciente = (datos.get("paciente") or {}).get("nombre", "No identificado")
             st.markdown(f"#### Expediente #{idx + 1} — {paciente}")
+            st.caption(doc_id)
 
             col_info, col_accion = st.columns([2, 1])
 
             with col_info:
-                st.write(f"🏷️ **Tipo:** {clf.get('tipo_documento', '—')}")
+                st.write(f"🏷️ **Tipo:** {_txt(clf.get('tipo_documento'), usar_nombre=True)}")
                 st.write(f"📊 **Confianza:** {clf.get('score_confianza', 0):.0%}")
                 st.write(f"💬 **Motivo:** {decision.get('justificacion', '—')}")
 
@@ -513,15 +580,14 @@ def _tab_hitl():
 
                 b1, b2 = st.columns(2)
                 with b1:
-                    if st.button("✅ Aprobar", key=f"aprobar_{idx}"):
-                        st.session_state.cola_hitl.pop(idx)
-                        st.success("Expediente aprobado.")
-                        st.rerun()
+                    if st.button("✅ Aprobar", key=f"aprobar_{doc_id}"):
+                        _resolver_expediente(idx, doc_id, "aprobado")
                 with b2:
-                    if st.button("❌ Rechazar", key=f"rechazar_{idx}"):
-                        st.session_state.cola_hitl.pop(idx)
-                        st.warning("Expediente rechazado.")
-                        st.rerun()
+                    if st.button("❌ Rechazar", key=f"rechazar_{doc_id}"):
+                        _resolver_expediente(idx, doc_id, "rechazado")
+
+            with st.expander("📎 Documento original"):
+                _mostrar_original(item.get("archivo_original"), doc_id)
 
             with st.expander("Ver JSON completo"):
                 st.json(item)

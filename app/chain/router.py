@@ -158,14 +158,19 @@ def _regla_auditoria(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
     if not faltantes and score >= UMBRAL_CONFIANZA_MEDIA:
         return None
 
-    campos = ", ".join(estado.datos_extraidos.campos_faltantes or []) if estado.datos_extraidos else "no especificados"
+    motivos: list[str] = []
+    if faltantes:
+        lista = (estado.datos_extraidos.campos_faltantes or []) if estado.datos_extraidos else []
+        motivos.append(
+            f"faltan datos obligatorios ({', '.join(lista)})" if lista else "sin datos extraídos"
+        )
+    if score < UMBRAL_CONFIANZA_MEDIA:
+        motivos.append(f"confianza {score:.0%} menor al umbral de {UMBRAL_CONFIANZA_MEDIA:.0%}")
 
     return DecisionEnrutamiento(
         destino=DestinoEnrutamiento.AUDITORIA_AUTORIZACIONES,
         requiere_revision_humana=True,
-        justificacion=(
-            f"Confianza media ({score:.0%}) o campos faltantes: {campos or 'ninguno identificado'}."
-        ),
+        justificacion="Requiere auditoría: " + "; ".join(motivos) + ".",
     )
 
 def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:

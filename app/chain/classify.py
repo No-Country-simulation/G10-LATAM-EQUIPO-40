@@ -17,6 +17,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.models.schemas import Clasificacion, EstadoPipeline
 from app.models.enums import NivelPrioridad, TipoDocumento
+from app.chain.llm_utils import invocar_con_reintentos
 from app.chain.prompts import SYSTEM_CLASIFICAR, PROMPT_CLASIFICAR_TEXTO, PROMPT_CLASIFICAR_IMAGEN, SCHEMA_CLASIFICAR
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ def nodo_clasificar(estado: EstadoPipeline) -> EstadoPipeline:
     try:
         llm = _get_llm(tiene_texto)
         mensajes = _construir_mensajes(estado)
-        response = llm.invoke(mensajes)
+        response = invocar_con_reintentos(llm, mensajes)
 
         # Solo depuración: la respuesta cruda puede contener datos del paciente
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":

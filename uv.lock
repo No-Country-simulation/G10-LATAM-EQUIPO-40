@@ -1152,6 +1152,7 @@ dependencies = [
     { name = "langchain-core" },
     { name = "oci" },
     { name = "pdfplumber" },
+    { name = "python-dotenv" },
     { name = "streamlit" },
 ]
 
@@ -1169,6 +1170,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.6.4" },
     { name = "oci", specifier = ">=2.187.2" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
+    { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "streamlit", specifier = ">=1.64.0" },
 ]
 
