@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 
 from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -67,6 +68,7 @@ _RELLENOS = {
     "no disponible", "no especificado", "no identificado", "sin dato", "sin datos",
     "desconocido", "ilegible", "no legible", "no aplica", "undefined",
     "firma ilegible", "sin firma", "en blanco", "no consta",
+    "no especificada", "no identificada", "no indicado", "no indicada",
 }
 
 def _limpiar(valor, descartar_interrogaciones: bool = False):
@@ -155,6 +157,82 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         campos_faltantes=_a_lista(data.get("campos_faltantes")),
     )
 
+# ── Verificación de lo extraído contra el texto fuente ──────────────────────────
+# Si hay texto (PDF nativo o transcripción OCR), los datos de identificación,
+# diagnóstico y medicamentos deben aparecer en él. Lo que el modelo inventó se descarta
+# y pasa a "faltante". Los hallazgos críticos NO se verifican: descartar uno real
+# sería más peligroso que conservar uno dudoso (que de todos modos va a revisión).
+
+def _tokens(texto: str) -> list[str]:
+    sin_tildes = "".join(
+        c for c in unicodedata.normalize("NFKD", texto.lower()) if not unicodedata.combining(c)
+    )
+    return re.findall(r"[a-z0-9]+", sin_tildes)
+
+
+def _respaldado(valor: str, tokens_texto: set[str], minimo: float = 0.6,
+                largo_min: int = 3, solo_alfa: bool = False) -> bool:
+    toks: list[str] = []
+    for t in _tokens(valor):
+        if t.isdigit():
+            if not solo_alfa:
+                toks.append(t)
+        elif len(t) >= largo_min and not any(ch.isdigit() for ch in t):
+            toks.append(t)
+    if not toks:
+        return True
+    return sum(t in tokens_texto for t in toks) / len(toks) >= minimo
+
+
+def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
+    """Descarta (pone en None) lo que no aparece en el texto. Devuelve qué se descartó."""
+    tokens_texto = set(_tokens(texto))
+    descartados: list[str] = []
+
+    def ok(valor, **kw) -> bool:
+        return _respaldado(valor, tokens_texto, **kw)
+
+    pac = datos.paciente
+    if pac:
+        if pac.nombre and not ok(pac.nombre):
+            pac.nombre = None; descartados.append("nombre del paciente")
+        if pac.documento_identidad and not ok(pac.documento_identidad, minimo=1.0):
+            pac.documento_identidad = None; descartados.append("documento del paciente")
+        if pac.edad and not re.search(rf"(?<!\d){pac.edad}(?!\d)", texto):
+            pac.edad = None; descartados.append("edad")
+        if not (pac.nombre or pac.documento_identidad or pac.edad):
+            datos.paciente = None
+
+    med = datos.medico_solicitante
+    if med:
+        if med.nombre and not ok(med.nombre):
+            med.nombre = None; descartados.append("nombre del médico")
+        if med.matricula and not ok(med.matricula, minimo=1.0):
+            med.matricula = None; descartados.append("matrícula")
+        if not (med.nombre or med.matricula or med.especialidad):
+            datos.medico_solicitante = None
+
+    if datos.diagnostico_principal and not ok(datos.diagnostico_principal, minimo=0.5, largo_min=4):
+        datos.diagnostico_principal = None; descartados.append("diagnóstico")
+    if datos.estudio_realizado and not ok(datos.estudio_realizado, minimo=0.6):
+        datos.estudio_realizado = None; descartados.append("estudio realizado")
+
+    if datos.medicamentos:
+        # Cada palabra del nombre del fármaco debe estar (evita "Amlodipina" por "Amoxicilina")
+        validos = [m for m in datos.medicamentos if m.nombre and ok(m.nombre, minimo=1.0, largo_min=5, solo_alfa=True)]
+        if len(validos) < len(datos.medicamentos):
+            descartados.append("medicamentos")
+        datos.medicamentos = validos or None
+
+    if datos.estudios_solicitados:
+        validos_e = [e for e in datos.estudios_solicitados if ok(e, minimo=0.6, largo_min=4)]
+        if len(validos_e) < len(datos.estudios_solicitados):
+            descartados.append("estudios solicitados")
+        datos.estudios_solicitados = validos_e or None
+
+    return descartados
+
+
 # Campos obligatorios por tipo de documento. La lista de faltantes se calcula en
 # código a partir de lo realmente extraído: la que declara el modelo no es confiable.
 _OBLIGATORIOS: dict[TipoDocumento, list[str]] = {
@@ -209,6 +287,14 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
             logger.info(f"[EXTRAER] respuesta cruda: {response.content}")
 
         estado.datos_extraidos = _parsear_respuesta(response.content)
+
+        if tiene_texto:
+            descartados = verificar_contra_texto(estado.datos_extraidos, estado.texto)
+            if descartados:
+                logger.warning(
+                    f"[EXTRAER] {estado.documento_id}: datos sin respaldo en el texto, "
+                    f"descartados: {descartados}"
+                )
 
         tipo = (
             estado.clasificacion.tipo_documento
