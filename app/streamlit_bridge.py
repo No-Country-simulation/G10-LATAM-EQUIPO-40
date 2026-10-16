@@ -11,11 +11,13 @@ from app.ingest.image_loader import imagen_desde_bytes
 from app.ingest.pdf_loader import procesar_pdf
 from app.models.schemas import EstadoPipeline, TipoArchivo
 from app.storage.oci_client import guardar_documento, marcar_como_recibido
+from app.storage.revision import guardar_original
 
 
 def procesar_texto(documento_id: str, canal: str, texto: str) -> dict:
     """Para el tab de Transcripción Manual y Casos Demo."""
     marcar_como_recibido(documento_id, {"documento_id": documento_id, "canal_origen": canal})
+    ruta_original = guardar_original(documento_id, "text/plain", texto.encode("utf-8"))
 
     estado = EstadoPipeline(
         documento_id=documento_id,
@@ -24,39 +26,49 @@ def procesar_texto(documento_id: str, canal: str, texto: str) -> dict:
         texto=texto,
     )
     estado = ejecutar_pipeline(estado)
-    oci = _persistir(estado)
-    return _serializar(estado, oci)
+    oci = _persistir(estado, ruta_original)
+    return _serializar(estado, oci, ruta_original)
 
 
 def procesar_archivo(documento_id: str, canal: str, contenido: bytes, mime: str) -> dict:
     """Para el tab de Ingesta con archivo real."""
     marcar_como_recibido(documento_id, {"documento_id": documento_id, "canal_origen": canal})
+    ruta_original = guardar_original(documento_id, mime, contenido)
 
+    es_pdf = mime == "application/pdf"
     estado = EstadoPipeline(
         documento_id=documento_id,
         canal_origen=canal,
-        tipo_archivo=TipoArchivo.PDF if mime == "application/pdf" else TipoArchivo.IMAGE,
+        tipo_archivo=TipoArchivo.PDF if es_pdf else TipoArchivo.IMAGE,
     )
 
-    if mime == "application/pdf":
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(contenido)
-            tmp_path = tmp.name
-        try:
-            resultado = procesar_pdf(tmp_path)
-            estado.texto = resultado.get("texto") or None
-            estado.imagenes_data_url = resultado.get("imagenes_data_url") or None
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-    else:
-        estado.imagenes_data_url = [imagen_desde_bytes(contenido, mime)]
+    try:
+        if es_pdf:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(contenido)
+                tmp_path = tmp.name
+            try:
+                resultado = procesar_pdf(tmp_path)
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+
+            if resultado.get("modo") == "error":
+                estado.error = resultado.get("texto")
+            else:
+                estado.texto = resultado.get("texto") or None
+                estado.imagenes_data_url = resultado.get("imagenes_data_url") or None
+        else:
+            estado.imagenes_data_url = [imagen_desde_bytes(contenido, mime)]
+    except Exception as e:
+        # Archivo corrupto o ilegible: va a revisión humana sin llamar al modelo
+        estado.error = f"No se pudo leer el archivo: {e}"
 
     estado = ejecutar_pipeline(estado)
-    oci = _persistir(estado)
-    return _serializar(estado, oci)
+    oci = _persistir(estado, ruta_original)
+    return _serializar(estado, oci, ruta_original)
 
 
-def _serializar(estado: EstadoPipeline, oci: dict | None = None) -> dict:
+def _serializar(estado: EstadoPipeline, oci: dict | None = None, ruta_original: str | None = None) -> dict:
     """Convierte EstadoPipeline a dict plano para st.json()."""
     return {
         "documento_id": estado.documento_id,
@@ -64,20 +76,23 @@ def _serializar(estado: EstadoPipeline, oci: dict | None = None) -> dict:
         "datos_extraidos": estado.datos_extraidos.model_dump() if estado.datos_extraidos else None,
         "decision": estado.decision.model_dump() if estado.decision else None,
         "error": estado.error,
+        "archivo_original": ruta_original,
         "almacenamiento_oci": oci,
     }
 
 
-def _persistir(estado: EstadoPipeline) -> dict | None:
+def _persistir(estado: EstadoPipeline, ruta_original: str | None = None) -> dict | None:
     if not estado.decision:
         return None
     es_urgente = (
         estado.clasificacion is not None
         and estado.clasificacion.nivel_prioridad.value == "Urgente"
     )
+    contenido = estado.model_dump(mode="json", exclude={"imagenes_data_url"})
+    contenido["archivo_original"] = ruta_original
     return guardar_documento(
         documento_id=estado.documento_id,
-        contenido=estado.model_dump(mode="json", exclude={"imagenes_data_url"}),
+        contenido=contenido,
         destino=estado.decision.destino.value,
         es_urgente=es_urgente,
     )

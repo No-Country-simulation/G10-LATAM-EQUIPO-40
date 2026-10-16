@@ -11,7 +11,9 @@ Flujo:
 from __future__ import annotations
 
 import logging
+import time
 
+from app.chain.transcribe import nodo_transcribir, ocr_primero_activado
 from app.chain.classify import nodo_clasificar
 from app.chain.extract import nodo_extraer
 from app.chain.router import nodo_enrutar, UMBRAL_CONFIANZA_BAJA
@@ -81,9 +83,27 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
         EstadoPipeline con clasificacion, datos_extraidos y decision poblados
     """
     logger.info(f"[PIPELINE] ══ Iniciando triaje: {estado.documento_id} ══")
+    t_inicio = time.perf_counter()
+    tiempos: dict[str, float] = {}
+
+    # Opcional: transcribir primero los documentos escaneados (MEDIFLOW_OCR_PRIMERO=1)
+    sin_texto = not (estado.texto and estado.texto.strip())
+    if ocr_primero_activado() and estado.imagenes_data_url and sin_texto and not estado.error:
+        t = time.perf_counter()
+        estado = nodo_transcribir(estado)
+        tiempos["ocr"] = time.perf_counter() - t
+
+    if estado.error:
+        # Error previo (archivo ilegible) o transcripción no confiable:
+        # revisión humana sin gastar llamadas al modelo
+        estado = _nodo_revision_humana(estado)
+        logger.info(f"[PIPELINE] ══ Completado: {estado.documento_id} → {estado.decision.destino.value} ══")
+        return estado
 
     # Nodo 1: Clasificar
+    t = time.perf_counter()
     estado = nodo_clasificar(estado)
+    tiempos["clasificar"] = time.perf_counter() - t
 
     # Bifurcación post-clasificación
     siguiente = _edge_post_clasificar(estado)
@@ -93,10 +113,15 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
 
     else:
         # Nodo 2: Extraer
+        t = time.perf_counter()
         estado = nodo_extraer(estado)
+        tiempos["extraer"] = time.perf_counter() - t
 
         # Nodo 3: Enrutar
         estado = nodo_enrutar(estado)
+
+    detalle = ", ".join(f"{k}={v:.1f}s" for k, v in tiempos.items())
+    logger.info(f"[PIPELINE] tiempos: {detalle}, total={time.perf_counter() - t_inicio:.1f}s")
 
     destino = estado.decision.destino.value if estado.decision else "N/A"
     logger.info(f"[PIPELINE] ══ Completado: {estado.documento_id} → {destino} ══")
