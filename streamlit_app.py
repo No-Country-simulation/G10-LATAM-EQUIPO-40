@@ -254,7 +254,7 @@ def _mostrar_resultado(
         st.markdown("###### Paciente")
         st.write(f"👤 **Nombre:** {paciente.get('nombre', 'No identificado')}")
         if paciente.get("edad"):
-            st.write(f"🎂 **Edad:** {paciente['edad']} años")
+            st.write(f"🎂 **Edad:** {paciente['edad']}")
 
         st.markdown("###### Médico solicitante")
         st.write(f"🩺 **Nombre:** {medico.get('nombre', 'No identificado')}")

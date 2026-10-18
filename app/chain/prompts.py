@@ -72,6 +72,7 @@ REGLAS ESTRICTAS:
 - Si un dato NO aparece o es ilegible, OMITE ese campo. Nunca escribas "null", "N/A", "???" ni texto de relleno.
 - Lee todas las páginas: el médico, su matrícula y el diagnóstico de egreso suelen estar en la última.
 - nombre del paciente: busca "Paciente:", nombres propios, "Sr.", "Sra.".
+- edad_paciente: extrae la edad exactamente como aparece en el documento, incluyendo su unidad. Usa formatos como "45 años", "8 meses" o "15 días". No conviertas meses o días a años. Si solo aparece el número sin unidad, conserva el número sin inventar la unidad. Si la edad no aparece o es ilegible, omite el campo.
 - nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:". Matrícula: "MP", "Reg", "Matrícula", junto al nombre o sello del médico.
 - diagnostico_principal: UNA línea breve (máximo 15 palabras) con la entidad clínica, no el párrafo completo. Búscala en "Diagnóstico:", "Dx:", "Conclusión:", "Diagnóstico de egreso", "compatible con". Si es dudoso o ilegible, omítelo. La indicación clínica de una orden no es un diagnóstico.
 - estudio_realizado: solo si el documento reporta el resultado de un estudio ya hecho (informe de imágenes o de laboratorio). En recetas, órdenes o epicrisis no lo completes.
@@ -91,7 +92,7 @@ SCHEMA_EXTRAER = {
     "type": "object",
     "properties": {
         "nombre_paciente":      {"type": "string"},
-        "edad_paciente":        {"type": "integer"},
+        "edad_paciente":        {"type": "string"},
         "documento_paciente":   {"type": "string"},
         "nombre_medico":        {"type": "string"},
         "matricula_medico":     {"type": "string"},

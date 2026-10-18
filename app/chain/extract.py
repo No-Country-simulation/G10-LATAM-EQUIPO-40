@@ -130,7 +130,7 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
 
     # Paciente
     nombre_paciente = _limpiar(data.get("nombre_paciente"), True)
-    edad_paciente   = _a_entero(data.get("edad_paciente"))
+    edad_paciente = _limpiar(data.get("edad_paciente"))
     doc_paciente    = _limpiar(data.get("documento_paciente"), True)
     paciente = Paciente(
         nombre=nombre_paciente,
