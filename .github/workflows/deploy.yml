@@ -36,16 +36,6 @@ jobs:
           podman save "localhost/mediflow:${GITHUB_SHA}" \
             | gzip > mediflow.tar.gz
 
-      - name: Prepare deployment directory
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.OCI_HOST }}
-          username: ${{ secrets.OCI_USER }}
-          key: ${{ secrets.OCI_SSH_KEY }}
-          script: |
-            set -eu
-            mkdir -p "$HOME/mediflow"
-
       - name: Copy image to Oracle Cloud
         uses: appleboy/scp-action@v1
         with:
@@ -53,7 +43,7 @@ jobs:
           username: ${{ secrets.OCI_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           source: mediflow.tar.gz
-          target: /home/opc/mediflow/
+          target: ~/mediflow/
 
       - name: Deploy with health check and rollback
         uses: appleboy/ssh-action@v1
@@ -68,19 +58,21 @@ jobs:
             set -eu
 
             DEPLOY_DIR="$HOME/mediflow"
-            IMAGE="localhost/mediflow:${IMAGE_TAG}"
-            BACKUP_FILE="$DEPLOY_DIR/previous-image"
+            NEW_IMAGE="localhost/mediflow:${IMAGE_TAG}"
+            BACKUP_IMAGE_TAR="$DEPLOY_DIR/previous-image.tar.gz"
 
+            mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
 
             echo "Loading new image..."
             podman load -i mediflow.tar.gz
 
-            # Guardar la imagen anterior para rollback.
-            PREVIOUS_IMAGE=""
+            HAS_PREVIOUS=0
             if podman container exists mediflow; then
-              PREVIOUS_IMAGE=$(podman inspect \
-                --format '{{.Image}}' mediflow)
+              CURRENT_CONTAINER_IMAGE=$(podman inspect --format '{{.Config.Image}}' mediflow)
+              echo "Creando backup físico de la imagen anterior ($CURRENT_CONTAINER_IMAGE)..."
+              podman save "$CURRENT_CONTAINER_IMAGE" | gzip > "$BACKUP_IMAGE_TAR"
+              HAS_PREVIOUS=1
             fi
 
             echo "Stopping previous container..."
@@ -91,8 +83,9 @@ jobs:
             podman run -d \
               --name mediflow \
               --restart=unless-stopped \
+              --env-file "$DEPLOY_DIR"/.env \
               -p 8501:8501 \
-              "$IMAGE"
+              "$NEW_IMAGE"
 
             echo "Waiting for application health..."
 
@@ -115,7 +108,7 @@ jobs:
 
             if [ "$HEALTHY" -eq 1 ]; then
               echo "Deployment successful."
-              rm -f mediflow.tar.gz "$BACKUP_FILE"
+              rm -f mediflow.tar.gz "$BACKUP_IMAGE_TAR"
               podman ps --filter name=mediflow
               exit 0
             fi
@@ -125,17 +118,22 @@ jobs:
             podman stop mediflow || true
             podman rm mediflow || true
 
-            if [ -n "$PREVIOUS_IMAGE" ]; then
-              echo "Restoring previous image: $PREVIOUS_IMAGE"
+            if [ "$HAS_PREVIOUS" -eq 1 ] && [ -f "$BACKUP_IMAGE_TAR" ]; then
+              echo "Restoring previous image from backup..."
+              
+              RESTORED_IMAGE=$(podman load -i "$BACKUP_IMAGE_TAR" | awk '{print $NF}')
+              echo "Image restored with reference: $RESTORED_IMAGE"
+            
               podman run -d \
                 --name mediflow \
                 --restart=unless-stopped \
+                --env-file "$DEPLOY_DIR"/.env \
                 -p 8501:8501 \
-                "$PREVIOUS_IMAGE"
+                "$RESTORED_IMAGE"
 
-              echo "Rollback executed. Verify previous container health."
+              echo "Rollback executed successfully using backup image."
             else
-              echo "No previous image available. Deployment failed."
+              echo "No previous image backup available. Deployment failed."
             fi
 
             rm -f mediflow.tar.gz
