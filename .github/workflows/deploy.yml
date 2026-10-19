@@ -74,6 +74,17 @@ jobs:
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
             
+            echo "Cleaning leftovers..."
+            rm -rf /var/tmp/container_images_* 2>/dev/null || true
+            podman image prune -f || true
+            
+            FREE_KB=$(df --output=avail /var/tmp | tail -1 | tr -d ' ')
+            if [ "$FREE_KB" -lt 6000000 ]; then
+              echo "ERROR: menos de 6 GB libres en /var/tmp. Abortando antes de cargar."
+              df -h / /var/tmp
+              exit 1
+            fi
+            
             echo "Loading new image..."
             podman load -i mediflow.tar.gz
             
