@@ -1,11 +1,26 @@
-.git
-.github
-__pycache__
+# Control de versiones e IDEs
+.git/
+.idea/
+.github/
+
+# Entornos virtuales y caché de Python
+.venv/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
-.venv
-venv/
+
+# Variables de entorno y credenciales
 .env
+.env.*
 *.pem
+
+# Documentación y metadatos
+.gitignore
+README.md
+README.MD
+
+# Carpetas de datos locales
 oci_storage_local/
+imagenes_de_muestra/
+notebook/
