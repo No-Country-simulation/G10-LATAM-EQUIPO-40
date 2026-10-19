@@ -12,6 +12,7 @@ class TipoDocumento(str, Enum):
     ORDEN_PROCEDIMIENTO = "Orden de Solicitud de Procedimiento"
     EPICRISIS          = "Epicrisis / Informe de Alta"
     CERTIFICADO_MEDICO = "Certificado Médico"
+    HOJA_TRIAJE = "Evaluación de Triaje / Urgencias"
     DESCONOCIDO        = "Desconocido"
 
 class NivelPrioridad(str, Enum):
