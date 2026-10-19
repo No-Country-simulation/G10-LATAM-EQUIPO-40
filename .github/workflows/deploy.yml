@@ -67,46 +67,57 @@ jobs:
             SERVICE="container-mediflow.service"
             NEW_IMAGE="localhost/mediflow:${IMAGE_TAG}"
             APP_IMAGE="localhost/mediflow-app"
-
+            HEALTH_URL="http://127.0.0.1:8501/_stcore/health"
+            
             export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-
+            
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
-
+            
             echo "Loading new image..."
             podman load -i mediflow.tar.gz
-
-            HAS_PREVIOUS=0
-            if podman image exists "$APP_IMAGE:latest"; then
+            
+            if podman image exists "$APP_IMAGE:latest" \
+               && curl -fs --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
               podman tag "$APP_IMAGE:latest" "$APP_IMAGE:previous"
+            fi
+            
+            HAS_PREVIOUS=0
+            if podman image exists "$APP_IMAGE:previous"; then
               HAS_PREVIOUS=1
             fi
             
             podman tag "$NEW_IMAGE" "$APP_IMAGE:latest"
-
+            
             echo "Restarting service..."
             systemctl --user restart "$SERVICE"
-
+            
             echo "Waiting for application health..."
             HEALTHY=0
             for i in $(seq 1 45); do
-              if curl -fs http://127.0.0.1:8501/_stcore/health >/dev/null 2>&1; then
+              if curl -fs --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
                 HEALTHY=1
                 break
               fi
               sleep 2
             done
-
+            
             if [ "$HEALTHY" -eq 1 ]; then
               echo "Deployment successful."
               rm -f mediflow.tar.gz
+            
+              podman images --format '{{.Repository}}:{{.Tag}}' \
+                | grep '^localhost/mediflow:' \
+                | grep -v "$IMAGE_TAG" \
+                | xargs -r podman rmi || true
+            
               podman image prune -f || true
               exit 0
             fi
-
+            
             echo "Health check failed. Rolling back..."
             journalctl --user -u "$SERVICE" -n 50 --no-pager || true
-
+            
             if [ "$HAS_PREVIOUS" -eq 1 ]; then
               podman tag "$APP_IMAGE:previous" "$APP_IMAGE:latest"
               systemctl --user restart "$SERVICE"
@@ -114,6 +125,6 @@ jobs:
             else
               echo "No previous image available."
             fi
-
+            
             rm -f mediflow.tar.gz
             exit 1
