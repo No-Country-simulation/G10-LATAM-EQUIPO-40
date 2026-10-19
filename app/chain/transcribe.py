@@ -29,7 +29,7 @@ from app.models.schemas import EstadoPipeline
 logger = logging.getLogger(__name__)
 
 MAX_PAGINAS = 3         # igual que el resto del pipeline
-MIN_CARACTERES = 80     # transcripción total mínima
+MIN_CARACTERES = 15     # transcripción total mínima
 
 SYSTEM_TRANSCRIBIR = """Eres un sistema de OCR para documentos clínicos escaneados.
 Transcribe fielmente TODO el texto visible de la imagen, en orden de lectura: encabezados, datos del paciente, tablas (una fila por línea), listas, sellos y firmas con texto legible, y pies de página.
