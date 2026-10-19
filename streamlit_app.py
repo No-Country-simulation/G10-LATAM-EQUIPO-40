@@ -17,6 +17,8 @@ from enum import Enum
 
 import streamlit as st
 
+from app.ui_progreso import progreso
+
 from app.storage.revision import leer_objeto, listar_pendientes, registrar_revision
 from app.streamlit_bridge import procesar_archivo, procesar_texto
 
@@ -305,7 +307,7 @@ MAX_DEMOS_VISIBLES = 3
 
 def _ejecutar_caso(caso: dict) -> dict:
     """Ejecuta un caso demo, lo encola en HITL si corresponde y devuelve el resultado."""
-    with st.spinner(f"Procesando {caso['id']} con Cohere..."):
+    with progreso():
         resultado = procesar_texto(
             documento_id=caso["id"],
             canal=caso["canal"],
@@ -398,7 +400,7 @@ def _tab_ingesta():
                 st.warning("⚠️ Seleccioná un archivo primero.")
                 return
 
-            with st.spinner("Procesando con Cohere..."):
+            with progreso():
                 resultado = procesar_archivo(
                     documento_id=doc_id,
                     canal=canal,
@@ -410,7 +412,7 @@ def _tab_ingesta():
                 st.warning("⚠️ Ingresá un texto primero.")
                 return
 
-            with st.spinner("Procesando con Cohere..."):
+            with progreso():
                 resultado = procesar_texto(
                     documento_id=doc_id,
                     canal=canal,

@@ -35,20 +35,20 @@ except ImportError:
     logger.warning("[OCI] SDK no instalado. Modo simulado activo.")
 
 # No local
-def _get_client():
-    config = oci.config.from_file()
-    if OCI_REGION:
-        config["region"] = OCI_REGION
-    if os.getenv("OCI_PASS_PHRASE"):
-        config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
-    return oci.object_storage.ObjectStorageClient(config)
-
 # def _get_client():
-#     signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-#     return oci.object_storage.ObjectStorageClient(
-#         config={"region": signer.region},
-#         signer=signer
-#     )
+#     config = oci.config.from_file()
+#     if OCI_REGION:
+#         config["region"] = OCI_REGION
+#     if os.getenv("OCI_PASS_PHRASE"):
+#         config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
+#     return oci.object_storage.ObjectStorageClient(config)
+
+def _get_client():
+    signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+    return oci.object_storage.ObjectStorageClient(
+        config={"region": signer.region},
+        signer=signer
+    )
 
 def _get_namespace(client) -> str:
     return OCI_NAMESPACE or client.get_namespace().data
