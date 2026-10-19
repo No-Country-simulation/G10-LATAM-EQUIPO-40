@@ -13,19 +13,20 @@ Tipos de documento posibles (responde con el CÓDIGO exacto en tipo_documento):
 - ORDEN_PROCEDIMIENTO: orden de solicitud de procedimiento
 - EPICRISIS: epicrisis o informe de alta: resumen de una hospitalización (títulos como "Epicrisis", "Resumen de egreso", "Diagnóstico de egreso", fechas de ingreso y egreso, evolución por días), aunque mencione estudios y medicamentos
 - CERTIFICADO_MEDICO: certificado médico
+- HOJA_TRIAJE: evaluación clínica de triaje hospitalario, hoja o ficha de triaje, categorización de urgencia/emergencia (Nivel I a Nivel V, C1 a C5), admisión de urgencias con signos vitales, motivo de consulta y discriminadores de gravedad
 - DESCONOCIDO: ilegible o no clasificable
 
 Niveles de prioridad:
 - "Urgente": hallazgos que amenazan la vida (TEP, IAM, ACV, sepsis, hemorragia masiva, shock, neumotórax a tensión) o resultados de laboratorio que el propio documento marca como CRÍTICOS. Un diagnóstico descartado ("se descarta TEP") no cuenta
 - "Alta": patologías graves que requieren atención durante el mismo día
 - "Normal": atención de rutina dentro de los plazos habituales
-- "Baja": documentos administrativos o controles de seguimiento
+- "Baja": documentos administrativos, controles de seguimiento o triajes clasificados como no urgentes (ej. Nivel V)
 
 La prioridad depende del CONTENIDO CLÍNICO del documento (hallazgos, conclusión, indicación), NO de su tipo. Un informe de imágenes, de laboratorio o una epicrisis pueden ser Urgente si describen un riesgo vital. Si en cualquier parte del documento hay un hallazgo que amenaza la vida, la prioridad es "Urgente" aunque el documento sea un informe de rutina.
 
 Ejemplos de prioridad:
-- Informe de Estudio por Imágenes que concluye "defecto de llenado en arteria pulmonar compatible con embolia pulmonar aguda, correlación urgente" -> tipo INFORME_IMAGENES, prioridad "Urgente" (el tipo de documento es habitual, pero el hallazgo amenaza la vida).
-- Informe de Estudio por Imágenes que describe "consolidación lobar compatible con neumonía, paciente febril con saturación 92%" -> "Alta" (grave, requiere atención el mismo día, sin riesgo vital inmediato).
+- Informe de Estudio por Imágenes que concluye "defecto de llenado en arteria pulmonar compatible con embolia pulmonar aguda, correlación urgente" -> tipo INFORME_IMAGENES, prioridad "Urgente".
+- Evaluación Clínica de Triaje Hospitalario que indica "NIVEL V - NO URGENTE" por cuadro catarral sin disnea -> tipo HOJA_TRIAJE, prioridad "Baja".
 - Informe de Laboratorio con "hemograma y glucemia dentro de valores normales, control anual" -> "Normal".
 
 Reglas:
@@ -52,6 +53,7 @@ SCHEMA_CLASIFICAR = {
                 "ORDEN_PROCEDIMIENTO",
                 "EPICRISIS",
                 "CERTIFICADO_MEDICO",
+                "HOJA_TRIAJE",
                 "DESCONOCIDO",
             ],
         },
@@ -73,12 +75,12 @@ REGLAS ESTRICTAS:
 - Lee todas las páginas: el médico, su matrícula y el diagnóstico de egreso suelen estar en la última.
 - nombre del paciente: busca "Paciente:", nombres propios, "Sr.", "Sra.".
 - edad_paciente: extrae la edad exactamente como aparece en el documento, incluyendo su unidad. Usa formatos como "45 años", "8 meses" o "15 días". No conviertas meses o días a años. Si solo aparece el número sin unidad, conserva el número sin inventar la unidad. Si la edad no aparece o es ilegible, omite el campo.
-- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Solicitante:". Matrícula: "MP", "Reg", "Matrícula", junto al nombre o sello del médico.
-- diagnostico_principal: UNA línea breve (máximo 15 palabras) con la entidad clínica, no el párrafo completo. Búscala en "Diagnóstico:", "Dx:", "Conclusión:", "Diagnóstico de egreso", "compatible con". Si es dudoso o ilegible, omítelo. La indicación clínica de una orden no es un diagnóstico.
-- estudio_realizado: solo si el documento reporta el resultado de un estudio ya hecho (informe de imágenes o de laboratorio). En recetas, órdenes o epicrisis no lo completes.
-- estudios_solicitados: el procedimiento o estudio pedido en órdenes y solicitudes (por ejemplo, "Colonoscopia"). No repitas aquí un estudio realizado.
-- medicamentos: nombre, dosis (por ejemplo "10 mg"), frecuencia (por ejemplo "cada 12 horas") y duración, por separado.
-- hallazgos_criticos: solo hallazgos que el documento AFIRME y que impliquen riesgo vital inmediato (TEP, IAM, ACV, sepsis, hemorragia masiva, shock, neumotórax a tensión), o resultados que el propio documento marque como CRÍTICOS (por ejemplo, un valor de laboratorio señalado "CRÍTICO"). Cada uno en menos de 12 palabras. NO incluyas diagnósticos descartados ("se descarta X"), valores normales o levemente alterados, fracturas u otros hallazgos no vitales, ni notas administrativas como "se comunicó por teléfono". Si no hay, devuelve una lista vacía [].
+- nombre del médico: busca "Dr.", "Dra.", "Médico:", "Médico Asignado:", "Solicitante:". Matrícula: "MP", "Reg", "Matrícula", "Registro Médico", junto al nombre o sello del profesional.
+- diagnostico_principal: UNA línea breve (máximo 15 palabras) con la entidad clínica. Búscala en "Diagnóstico:", "Dx:", "Criterio Clínico:", "Motivo de consulta", "Conclusión:". Si es dudoso o ilegible, omítelo.
+- estudio_realizado: solo si el documento reporta el resultado de un estudio ya hecho (informe de imágenes o de laboratorio). En recetas, órdenes, triajes o epicrisis no lo completes.
+- estudios_solicitados: el procedimiento o estudio pedido en órdenes y solicitudes.
+- medicamentos: nombre, dosis, frecuencia y duración, por separado.
+- hallazgos_criticos: solo hallazgos que el documento AFIRME y que impliquen riesgo vital inmediato (TEP, IAM, ACV, sepsis, hemorragia masiva, shock, neumotórax a tensión). Si no hay, devuelve una lista vacía [].
 - campos_faltantes: solo campos importantes que NO encontraste Y que corresponden a este tipo de documento.
 - Responde ÚNICAMENTE con el JSON, sin texto adicional."""
 
@@ -105,10 +107,10 @@ SCHEMA_EXTRAER = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "nombre":    {"type": "string"},
-                    "dosis":     {"type": "string"},
-                    "frecuencia":{"type": "string"},
-                    "duracion":  {"type": "string"},
+                    "nombre":     {"type": "string"},
+                    "dosis":      {"type": "string"},
+                    "frecuencia": {"type": "string"},
+                    "duracion":   {"type": "string"},
                 },
                 "required": ["nombre"],
             },
