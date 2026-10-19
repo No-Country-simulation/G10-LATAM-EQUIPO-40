@@ -31,7 +31,7 @@ DESTINO_POR_TIPO: dict[TipoDocumento, DestinoEnrutamiento] = {
     TipoDocumento.ORDEN_PROCEDIMIENTO: DestinoEnrutamiento.AUDITORIA_AUTORIZACIONES,
     TipoDocumento.EPICRISIS:           DestinoEnrutamiento.HISTORIA_CLINICA,
     TipoDocumento.CERTIFICADO_MEDICO:  DestinoEnrutamiento.HISTORIA_CLINICA,
-    TipoDocumento.HOJA_TRIAJE:         DestinoEnrutamiento.COLA_EMERGENCIA,
+    TipoDocumento.HOJA_TRIAJE:         DestinoEnrutamiento.HISTORIA_CLINICA,
     TipoDocumento.DESCONOCIDO:         DestinoEnrutamiento.REVISION_HUMANA,
 }
 
@@ -132,9 +132,25 @@ def _regla_auditoria(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
 def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
     tipo = estado.clasificacion.tipo_documento if estado.clasificacion else TipoDocumento.DESCONOCIDO
     score, esp = _score(estado), _especialidad(estado)
-    destino = DESTINO_POR_TIPO.get(tipo, DestinoEnrutamiento.REVISION_HUMANA)
+    prioridad = estado.clasificacion.nivel_prioridad if estado.clasificacion else NivelPrioridad.NORMAL
     esp_txt = f" (Especialidad sugerida: {esp})" if esp else ""
-    return DecisionEnrutamiento(destino=destino, requiere_revision_humana=(tipo == TipoDocumento.DESCONOCIDO), justificacion=f"Documento tipo '{tipo.value}' con confianza {score:.0%}. Enrutado a {destino.value}{esp_txt}.")
+
+    # Criterio clínico diferenciado para Triaje Hospitalario
+    if tipo == TipoDocumento.HOJA_TRIAJE:
+        if prioridad == NivelPrioridad.ALTA:
+            destino = DestinoEnrutamiento.COLA_EMERGENCIA
+            justificacion = f"Triaje con Prioridad Alta (confianza {score:.0%}). Enrutado a Guardia/Emergencias para atención prioritaria{esp_txt}."
+        else:
+            destino = DestinoEnrutamiento.HISTORIA_CLINICA
+            justificacion = f"Triaje clasificado como Prioridad {prioridad.value} (confianza {score:.0%}). Registrado en Historia Clínica para atención ambulatoria según turno de espera{esp_txt}."
+        return DecisionEnrutamiento(destino=destino, requiere_revision_humana=False, justificacion=justificacion)
+
+    destino = DESTINO_POR_TIPO.get(tipo, DestinoEnrutamiento.REVISION_HUMANA)
+    return DecisionEnrutamiento(
+        destino=destino,
+        requiere_revision_humana=(tipo == TipoDocumento.DESCONOCIDO),
+        justificacion=f"Documento tipo '{tipo.value}' con confianza {score:.0%}. Enrutado a {destino.value}{esp_txt}."
+    )
 
 def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
     logger.info(f"[ENRUTAR] {estado.documento_id}")
