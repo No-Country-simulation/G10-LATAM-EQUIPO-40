@@ -64,8 +64,11 @@ jobs:
             set -eu
 
             DEPLOY_DIR="$HOME/mediflow"
+            SERVICE="container-mediflow.service"
             NEW_IMAGE="localhost/mediflow:${IMAGE_TAG}"
-            BACKUP_IMAGE_TAR="$DEPLOY_DIR/previous-image.tar.gz"
+            APP_IMAGE="localhost/mediflow-app"
+
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
@@ -74,72 +77,42 @@ jobs:
             podman load -i mediflow.tar.gz
 
             HAS_PREVIOUS=0
-            if podman container exists mediflow; then
-              CURRENT_CONTAINER_IMAGE=$(podman inspect --format '{{.Config.Image}}' mediflow)
-              echo "Creando backup físico de la imagen anterior ($CURRENT_CONTAINER_IMAGE)..."
-              podman save "$CURRENT_CONTAINER_IMAGE" | gzip > "$BACKUP_IMAGE_TAR"
+            if podman image exists "$APP_IMAGE:latest"; then
+              podman tag "$APP_IMAGE:latest" "$APP_IMAGE:previous"
               HAS_PREVIOUS=1
             fi
+            
+            podman tag "$NEW_IMAGE" "$APP_IMAGE:latest"
 
-            echo "Stopping previous container..."
-            podman stop mediflow || true
-            podman rm mediflow || true
-
-            echo "Starting new container..."
-            podman run -d \
-              --name mediflow \
-              --restart=unless-stopped \
-              --env-file "$DEPLOY_DIR"/.env \
-              -p 8501:8501 \
-              "$NEW_IMAGE"
+            echo "Restarting service..."
+            systemctl --user restart "$SERVICE"
 
             echo "Waiting for application health..."
-
             HEALTHY=0
-            for i in $(seq 1 30); do
-              if podman exec mediflow python3 -c \
-                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2)" \
-                >/dev/null 2>&1; then
+            for i in $(seq 1 45); do
+              if curl -fs http://127.0.0.1:8501/_stcore/health >/dev/null 2>&1; then
                 HEALTHY=1
                 break
               fi
-
-              if ! podman container exists mediflow || \
-                 [ "$(podman inspect -f '{{.State.Running}}' mediflow 2>/dev/null || echo false)" != "true" ]; then
-                break
-              fi
-
               sleep 2
             done
 
             if [ "$HEALTHY" -eq 1 ]; then
               echo "Deployment successful."
-              rm -f mediflow.tar.gz "$BACKUP_IMAGE_TAR"
-              podman ps --filter name=mediflow
+              rm -f mediflow.tar.gz
+              podman image prune -f || true
               exit 0
             fi
 
             echo "Health check failed. Rolling back..."
-            podman logs mediflow || true
-            podman stop mediflow || true
-            podman rm -f mediflow 2>/dev/null || true
+            journalctl --user -u "$SERVICE" -n 50 --no-pager || true
 
-            if [ "$HAS_PREVIOUS" -eq 1 ] && [ -f "$BACKUP_IMAGE_TAR" ]; then
-              echo "Restoring previous image from backup..."
-              
-              RESTORED_IMAGE=$(podman load -i "$BACKUP_IMAGE_TAR" | awk '{print $NF}')
-              echo "Image restored with reference: $RESTORED_IMAGE"
-            
-              podman run -d \
-                --name mediflow \
-                --restart=unless-stopped \
-                --env-file "$DEPLOY_DIR"/.env \
-                -p 8501:8501 \
-                "$RESTORED_IMAGE"
-
-              echo "Rollback executed successfully using backup image."
+            if [ "$HAS_PREVIOUS" -eq 1 ]; then
+              podman tag "$APP_IMAGE:previous" "$APP_IMAGE:latest"
+              systemctl --user restart "$SERVICE"
+              echo "Rollback executed using previous image."
             else
-              echo "No previous image backup available. Deployment failed."
+              echo "No previous image available."
             fi
 
             rm -f mediflow.tar.gz
