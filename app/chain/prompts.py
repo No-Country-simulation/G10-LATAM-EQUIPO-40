@@ -52,6 +52,7 @@ SCHEMA_CLASIFICAR = {
                 "ORDEN_PROCEDIMIENTO",
                 "EPICRISIS",
                 "CERTIFICADO_MEDICO",
+                "Evaluación de Triaje / Urgencias",
                 "DESCONOCIDO",
             ],
         },
