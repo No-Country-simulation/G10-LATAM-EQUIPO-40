@@ -17,10 +17,10 @@ from enum import Enum
 
 import streamlit as st
 
+from app.ui_progreso import progreso
+
 from app.storage.revision import leer_objeto, listar_pendientes, registrar_revision
 from app.streamlit_bridge import procesar_archivo, procesar_texto
-
-from app.ui_progreso import progreso
 
 # Streamlit no configura el logging de la app: sin esto, los logger.info() de
 # app.chain.* (clasificar, extraer, enrutar) no aparecen en la consola.
@@ -256,7 +256,7 @@ def _mostrar_resultado(
         st.markdown("###### Paciente")
         st.write(f"👤 **Nombre:** {paciente.get('nombre', 'No identificado')}")
         if paciente.get("edad"):
-            st.write(f"🎂 **Edad:** {paciente['edad']} años")
+            st.write(f"🎂 **Edad:** {paciente['edad']}")
 
         st.markdown("###### Médico solicitante")
         st.write(f"🩺 **Nombre:** {medico.get('nombre', 'No identificado')}")

@@ -13,11 +13,8 @@ import streamlit as st
 
 FRASES = [
     "Recibiendo el documento…",
-    "Identificando el documento…",
-    "Preparando las páginas…",
     "Extrayendo el texto de cada página…",
     "Clasificando el documento y leyendo sus datos…",
-    "Verificando los datos contra el documento…",
     "Decidiendo a dónde enviarlo…",
     "Guardando el expediente…",
 ]
@@ -55,7 +52,7 @@ def _html(frases: list[str], segundos: int) -> str:
 
 
 @contextmanager
-def progreso(frases: list[str] | None = None, segundos: int = 4):
+def progreso(frases: list[str] | None = None, segundos: int = 3):
     """Muestra el electrocardiograma con frases rotando mientras corre el bloque."""
     espacio = st.empty()
     espacio.markdown(_html(frases or FRASES, segundos), unsafe_allow_html=True)

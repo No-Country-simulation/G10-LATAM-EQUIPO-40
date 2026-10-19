@@ -6,7 +6,7 @@ from app.models.enums import DestinoEnrutamiento, NivelPrioridad, TipoArchivo, T
 
 class Paciente(BaseModel):
     nombre: Optional[str] = None
-    edad: Optional[int] = None
+    edad: str | None = None
     documento_identidad: Optional[str] = None
  
 class MedicoSolicitante(BaseModel):
