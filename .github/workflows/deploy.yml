@@ -5,6 +5,12 @@ on:
     branches:
       - main
       - develop
+    paths:
+      - 'app/**'
+      - 'main.py'
+      - 'streamlit_app.py'
+      - 'Containerfile'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
