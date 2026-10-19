@@ -56,6 +56,7 @@ DESTINO_POR_TIPO: dict[TipoDocumento, DestinoEnrutamiento] = {
     TipoDocumento.ORDEN_PROCEDIMIENTO: DestinoEnrutamiento.AUDITORIA_AUTORIZACIONES,
     TipoDocumento.EPICRISIS:           DestinoEnrutamiento.HISTORIA_CLINICA,
     TipoDocumento.CERTIFICADO_MEDICO:  DestinoEnrutamiento.HISTORIA_CLINICA,
+    TipoDocumento.HOJA_TRIAJE:         DestinoEnrutamiento.COLA_EMERGENCIA,
     TipoDocumento.DESCONOCIDO:         DestinoEnrutamiento.REVISION_HUMANA,
 }
 
@@ -154,18 +155,28 @@ def _regla_confianza_baja(estado: EstadoPipeline) -> DecisionEnrutamiento | None
         justificacion=f"Score de confianza bajo ({score:.0%}). Requiere validación manual.",
     )
 
+def _especialidad(estado: EstadoPipeline) -> str | None:
+    """Extrae la especialidad de la clasificación si es válida."""
+    if estado.clasificacion and estado.clasificacion.especialidad:
+        esp = estado.clasificacion.especialidad.strip()
+        if esp and esp.lower() not in {"ninguna", "desconocida", "no aplica", "n/a", "null"}:
+            return esp
+    return None
+
 def _decision_emergencia(estado: EstadoPipeline) -> DecisionEnrutamiento:
     paciente = _nombre_paciente(estado)
     resumen = _resumen_critico(estado)
+    esp = _especialidad(estado)
+    esp_txt = f" | Derivación a: {esp}" if esp else ""
 
     if resumen:
-        justificacion = f"Hallazgo crítico ({resumen}) en {paciente}."
-        mensaje = f"⚠️ ALERTA URGENTE: {resumen} — {paciente} — {estado.canal_origen}"
+        justificacion = f"Hallazgo crítico ({resumen}) en {paciente}. Derivar a interconsulta con {esp or 'Guardia / Emergencias'}."
+        mensaje = f"⚠️ ALERTA URGENTE: {resumen} — {paciente}{esp_txt} — {estado.canal_origen}"
     else:
         tipo = estado.clasificacion.tipo_documento.value if estado.clasificacion else "Documento"
-        justificacion = f"{tipo} clasificado como Urgente en {paciente}; no se extrajo un hallazgo específico."
+        justificacion = f"{tipo} clasificado como Urgente en {paciente}. Derivar a interconsulta con {esp or 'Guardia / Emergencias'}."
         mensaje = (
-            f"⚠️ ALERTA URGENTE: {tipo} clasificado como Urgente — {paciente} — "
+            f"⚠️ ALERTA URGENTE: {tipo} clasificado como Urgente — {paciente}{esp_txt} — "
             f"{estado.canal_origen}. Revisar el documento."
         )
 
@@ -179,9 +190,9 @@ def _decision_emergencia(estado: EstadoPipeline) -> DecisionEnrutamiento:
 def _regla_urgencia(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
     """
     Regla de cruce (dos señales independientes):
-      - La clasificación dice Urgente            -> Cola de Emergencia.
+      - La clasificación dice Urgente             -> Cola de Emergencia.
       - Hay hallazgo crítico pero la clasificación
-        NO dice Urgente (señales que discrepan)  -> revisión humana, no alarma automática.
+        NO dice Urgente (señales que discrepan)   -> revisión humana, no alarma automática.
     Evita que un hallazgo mal extraído dispare una alerta a guardia por sí solo.
     """
     prioridad = (
@@ -235,13 +246,15 @@ def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
     )
     score = _score(estado)
     destino = DESTINO_POR_TIPO.get(tipo, DestinoEnrutamiento.REVISION_HUMANA)
+    esp = _especialidad(estado)
+    esp_txt = f" (Especialidad sugerida: {esp})" if esp else ""
 
     return DecisionEnrutamiento(
         destino=destino,
         requiere_revision_humana=(tipo == TipoDocumento.DESCONOCIDO),
         justificacion=(
             f"Documento tipo '{tipo.value}' con confianza {score:.0%}. "
-            f"Enrutado a {destino.value}."
+            f"Enrutado a {destino.value}{esp_txt}."
         ),
     )
 
@@ -263,10 +276,10 @@ def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
         decision = regla(estado)
         if decision is not None:
             estado.decision = decision
-            logger.info(f"[ENRUTAR] → {decision.destino.value} | {decision.justificacion}")
+            logger.info(f"[ENRUTAR] -> {decision.destino.value} | {decision.justificacion}")
             return estado
 
     # Ninguna regla de excepción aplicó -> enrutamiento por tipo
     estado.decision = _regla_tipo(estado)
-    logger.info(f"[ENRUTAR] → {estado.decision.destino.value} | {estado.decision.justificacion}")
+    logger.info(f"[ENRUTAR] -> {estado.decision.destino.value} | {estado.decision.justificacion}")
     return estado
