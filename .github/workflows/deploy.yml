@@ -91,7 +91,7 @@ jobs:
 
             HEALTHY=0
             for i in $(seq 1 30); do
-              if podman exec mediflow python -c \
+              if podman exec mediflow python3 -c \
                 "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2)" \
                 >/dev/null 2>&1; then
                 HEALTHY=1
@@ -116,7 +116,7 @@ jobs:
             echo "Health check failed. Rolling back..."
             podman logs mediflow || true
             podman stop mediflow || true
-            podman rm mediflow || true
+            podman rm -f mediflow 2>/dev/null || true
 
             if [ "$HAS_PREVIOUS" -eq 1 ] && [ -f "$BACKUP_IMAGE_TAR" ]; then
               echo "Restoring previous image from backup..."
