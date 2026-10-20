@@ -24,6 +24,7 @@ from app.models.schemas import (
     Medicamento,
     MedicoSolicitante,
     Paciente,
+    SignosVitales,
 )
 from app.chain.llm_utils import invocar_con_reintentos
 from app.models.enums import TipoDocumento
@@ -148,6 +149,26 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         especialidad=especialidad_medico,
     ) if any([nombre_medico, matricula_medico, especialidad_medico]) else None
 
+    # Signos Vitales
+    sv_raw = data.get("signos_vitales") or {}
+    if not isinstance(sv_raw, dict):
+        sv_raw = {}
+    pa = _limpiar(sv_raw.get("presion_arterial"))
+    fc = _limpiar(sv_raw.get("frecuencia_cardiaca"))
+    fr = _limpiar(sv_raw.get("frecuencia_respiratoria"))
+    spo2 = _limpiar(sv_raw.get("saturacion_oxigeno"))
+    temp = _limpiar(sv_raw.get("temperatura"))
+    glasgow = _limpiar(sv_raw.get("glasgow"))
+
+    signos_vitales = SignosVitales(
+        presion_arterial=pa,
+        frecuencia_cardiaca=fc,
+        frecuencia_respiratoria=fr,
+        saturacion_oxigeno=spo2,
+        temperatura=temp,
+        glasgow=glasgow,
+    ) if any([pa, fc, fr, spo2, temp, glasgow]) else None
+
     # Medicamentos
     meds_raw = data.get("medicamentos") or []
     if not isinstance(meds_raw, list):
@@ -169,6 +190,7 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         estudio_realizado=_limpiar(data.get("estudio_realizado")),
         diagnostico_principal=_limpiar(data.get("diagnostico_principal")),
         cie10_sugerido=_limpiar(data.get("cie10_sugerido")),
+        signos_vitales=signos_vitales,
         medicamentos=medicamentos,
         estudios_solicitados=_a_lista(data.get("estudios_solicitados")),
         hallazgos_criticos=_a_lista(data.get("hallazgos_criticos")),
@@ -176,11 +198,6 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
     )
 
 # ── Verificación de lo extraído contra el texto fuente ──────────────────────────
-# Si hay texto (PDF nativo o transcripción OCR), los datos de identificación,
-# diagnóstico y medicamentos deben aparecer en él. Lo que el modelo inventó se descarta
-# y pasa a "faltante". Los hallazgos críticos NO se verifican: descartar uno real
-# sería más peligroso que conservar uno dudoso (que de todos modos va a revisión).
-
 def _tokens(texto: str) -> list[str]:
     sin_tildes = "".join(
         c for c in unicodedata.normalize("NFKD", texto.lower()) if not unicodedata.combining(c)
@@ -236,7 +253,6 @@ def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
         datos.estudio_realizado = None; descartados.append("estudio realizado")
 
     if datos.medicamentos:
-        # Cada palabra del nombre del fármaco debe estar (evita "Amlodipina" por "Amoxicilina")
         validos = [m for m in datos.medicamentos if m.nombre and ok(m.nombre, minimo=1.0, largo_min=5, solo_alfa=True)]
         if len(validos) < len(datos.medicamentos):
             descartados.append("medicamentos")
@@ -251,16 +267,16 @@ def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
     return descartados
 
 
-# Campos obligatorios por tipo de documento. La lista de faltantes se calcula en
-# código a partir de lo realmente extraído: la que declara el modelo no es confiable.
+# Campos obligatorios por tipo de documento.
 _OBLIGATORIOS: dict[TipoDocumento, list[str]] = {
-    TipoDocumento.RECETA_MEDICA:       ["paciente", "médico", "matrícula", "medicamentos"],
-    TipoDocumento.INFORME_IMAGENES:    ["paciente", "médico", "estudio realizado", "diagnóstico"],
+    TipoDocumento.RECETA_MEDICA:        ["paciente", "médico", "matrícula", "medicamentos"],
+    TipoDocumento.INFORME_IMAGENES:     ["paciente", "médico", "estudio realizado", "diagnóstico"],
     TipoDocumento.INFORME_LABORATORIO: ["paciente", "médico", "estudio realizado"],
     TipoDocumento.ORDEN_PROCEDIMIENTO: ["paciente", "médico", "matrícula", "estudios solicitados"],
-    TipoDocumento.EPICRISIS:           ["paciente", "médico", "diagnóstico"],
-    TipoDocumento.CERTIFICADO_MEDICO:  ["paciente", "médico", "matrícula"],
-    TipoDocumento.DESCONOCIDO:         ["paciente", "médico"],
+    TipoDocumento.EPICRISIS:            ["paciente", "médico", "diagnóstico"],
+    TipoDocumento.CERTIFICADO_MEDICO:   ["paciente", "médico", "matrícula"],
+    TipoDocumento.HOJA_TRIAJE:          ["paciente", "diagnóstico"],
+    TipoDocumento.DESCONOCIDO:          ["paciente", "médico"],
 }
 
 def _presente(datos: DatosExtraidos, campo: str) -> bool:
@@ -287,10 +303,6 @@ def calcular_faltantes(datos: DatosExtraidos, tipo: TipoDocumento) -> list[str] 
     return faltantes or None
 
 # ── Segunda pasada: pedir solo los campos obligatorios que faltaron ─────────────
-# El modelo a veces omite datos que sí están en el texto (variabilidad entre corridas).
-# Si hay texto y faltan campos obligatorios, se pregunta solo por esos campos y se
-# aceptan únicamente los valores que aparecen en el texto (verificar_contra_texto).
-
 def segunda_pasada_activada() -> bool:
     return os.getenv("MEDIFLOW_SEGUNDA_PASADA", "1") != "0"
 
@@ -331,13 +343,11 @@ def _esquema_parcial(claves: list[str]) -> dict:
     return {
         "type": "object",
         "properties": {k: SCHEMA_EXTRAER["properties"][k] for k in claves},
-        # Cohere rechaza (400) un objeto sin al menos un campo requerido
         "required": claves,
     }
 
 
 def _fusionar(datos: DatosExtraidos, nuevo: DatosExtraidos) -> list[str]:
-    """Copia a `datos` solo lo que le faltaba. Devuelve los campos recuperados."""
     recuperados: list[str] = []
 
     if not (datos.paciente and datos.paciente.nombre) and nuevo.paciente and nuevo.paciente.nombre:
@@ -355,6 +365,9 @@ def _fusionar(datos: DatosExtraidos, nuevo: DatosExtraidos) -> list[str]:
         datos.medico_solicitante.matricula = nm.matricula
         recuperados.append("matrícula")
 
+    if not datos.signos_vitales and nuevo.signos_vitales:
+        datos.signos_vitales = nuevo.signos_vitales
+
     for campo, etiqueta in (
         ("estudio_realizado", "estudio realizado"),
         ("diagnostico_principal", "diagnóstico"),
@@ -369,7 +382,6 @@ def _fusionar(datos: DatosExtraidos, nuevo: DatosExtraidos) -> list[str]:
 
 
 def aplicar_faltantes(estado: EstadoPipeline) -> None:
-    """Calcula campos_faltantes según el tipo de documento ya clasificado."""
     if not estado.datos_extraidos or estado.error:
         return
     tipo = estado.clasificacion.tipo_documento if estado.clasificacion else TipoDocumento.DESCONOCIDO
@@ -377,11 +389,6 @@ def aplicar_faltantes(estado: EstadoPipeline) -> None:
 
 
 def completar_extraccion(estado: EstadoPipeline) -> list[str]:
-    """
-    Segunda pasada: pregunta solo por los campos obligatorios faltantes.
-    Requiere texto (PDF nativo o transcripción). Devuelve los campos recuperados.
-    Nunca lanza: si falla, el documento sigue con lo que tenía (y va a auditoría).
-    """
     datos = estado.datos_extraidos
     if not datos or not datos.campos_faltantes or not (estado.texto and estado.texto.strip()):
         return []
@@ -402,7 +409,7 @@ def completar_extraccion(estado: EstadoPipeline) -> list[str]:
             logger.info(f"[EXTRAER] segunda pasada, respuesta cruda: {response.content}")
 
         nuevo = _parsear_respuesta(response.content)
-        verificar_contra_texto(nuevo, estado.texto)   # solo vale lo que está en el texto
+        verificar_contra_texto(nuevo, estado.texto)
         recuperados = _fusionar(datos, nuevo)
     except Exception as e:
         logger.warning(f"[EXTRAER] {estado.documento_id}: la segunda pasada falló ({e}); se sigue sin ella.")
@@ -417,10 +424,6 @@ def completar_extraccion(estado: EstadoPipeline) -> list[str]:
 
 
 def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
-    """
-    Nodo 2 del pipeline.
-    Recibe EstadoPipeline, puebla estado.datos_extraidos y lo devuelve.
-    """
     logger.info(f"[EXTRAER] {estado.documento_id}")
 
     tiene_texto = bool(estado.texto and estado.texto.strip())
@@ -430,7 +433,6 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
         mensajes = _construir_mensajes(estado)
         response = invocar_con_reintentos(llm, mensajes)
 
-        # Solo para depuración: la respuesta cruda puede contener datos del paciente
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
             logger.info(f"[EXTRAER] respuesta cruda: {response.content}")
 

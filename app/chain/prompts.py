@@ -80,6 +80,7 @@ REGLAS ESTRICTAS:
 - estudio_realizado: solo si el documento reporta el resultado de un estudio ya hecho (informe de imágenes o de laboratorio). En recetas, órdenes, triajes o epicrisis no lo completes.
 - estudios_solicitados: el procedimiento o estudio pedido en órdenes y solicitudes.
 - medicamentos: nombre, dosis, frecuencia y duración, por separado.
+- signos_vitales: si el documento incluye constantes fisiológicas o signos vitales (PA, FC, FR, SpO2/Sat, Temperatura, Glasgow), extrae sus valores en el objeto "signos_vitales". Si no existen o no aplican, omite el campo.
 - hallazgos_criticos: solo hallazgos que el documento AFIRME y que impliquen riesgo vital inmediato (TEP, IAM, ACV, sepsis, hemorragia masiva, shock, neumotórax a tensión). Si no hay, devuelve una lista vacía [].
 - campos_faltantes: solo campos importantes que NO encontraste Y que corresponden a este tipo de documento.
 - Responde ÚNICAMENTE con el JSON, sin texto adicional."""
@@ -102,6 +103,17 @@ SCHEMA_EXTRAER = {
         "estudio_realizado":    {"type": "string"},
         "diagnostico_principal":{"type": "string"},
         "cie10_sugerido":       {"type": "string"},
+        "signos_vitales": {
+            "type": "object",
+            "properties": {
+                "presion_arterial":        {"type": "string"},
+                "frecuencia_cardiaca":    {"type": "string"},
+                "frecuencia_respiratoria": {"type": "string"},
+                "saturacion_oxigeno":      {"type": "string"},
+                "temperatura":             {"type": "string"},
+                "glasgow":                 {"type": "string"},
+            },
+        },
         "medicamentos": {
             "type": "array",
             "items": {

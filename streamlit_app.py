@@ -270,6 +270,26 @@ def _mostrar_resultado(
             if datos.get("cie10_sugerido"):
                 st.write(f"📌 **CIE-10:** {datos['cie10_sugerido']}")
 
+        # ── Signos Vitales y Constantes Fisiológicas ──
+        sv = datos.get("signos_vitales")
+        if sv:
+            sv_dict = (
+                sv if isinstance(sv, dict)
+                else (sv.model_dump() if hasattr(sv, "model_dump") else getattr(sv, "__dict__", {}))
+            )
+            if any(sv_dict.values()):
+                st.markdown("###### 🫀 Constantes Fisiológicas y Signos Vitales")
+                col_sv1, col_sv2, col_sv3 = st.columns(3)
+                with col_sv1:
+                    st.metric("Presión (PA)", sv_dict.get("presion_arterial") or "—")
+                    st.metric("Sat. O2 (SpO2)", sv_dict.get("saturacion_oxigeno") or "—")
+                with col_sv2:
+                    st.metric("Pulso (FC)", sv_dict.get("frecuencia_cardiaca") or "—")
+                    st.metric("Temperatura", sv_dict.get("temperatura") or "—")
+                with col_sv3:
+                    st.metric("Frec. Resp. (FR)", sv_dict.get("frecuencia_respiratoria") or "—")
+                    st.metric("Glasgow", sv_dict.get("glasgow") or "—")
+
         meds = datos.get("medicamentos") or []
         if meds:
             st.markdown("###### Medicamentos")
@@ -584,9 +604,9 @@ def _tab_hitl():
                 with b1:
                     if st.button("✅ Aprobar", key=f"aprobar_{doc_id}"):
                         _resolver_expediente(idx, doc_id, "aprobado")
-                with b2:
-                    if st.button("❌ Rechazar", key=f"rechazar_{doc_id}"):
-                        _resolver_expediente(idx, doc_id, "rechazado")
+                    with b2:
+                        if st.button("❌ Rechazar", key=f"rechazar_{doc_id}"):
+                            _resolver_expediente(idx, doc_id, "rechazado")
 
             with st.expander("📎 Documento original"):
                 _mostrar_original(item.get("archivo_original"), doc_id)
