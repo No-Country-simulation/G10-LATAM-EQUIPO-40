@@ -43,8 +43,6 @@ MODELO_VISION = "command-a-vision-07-2025"
 def _get_llm(tiene_texto: bool):
     model = MODELO_TEXTO if tiene_texto else MODELO_VISION
     llm = ChatCohere(model=model, temperature=0.0)
-    # OJO: response_format debe ir con bind(). Si se pasa al constructor de
-    # ChatCohere, langchain-cohere lo descarta y Cohere nunca recibe el esquema.
     return llm.bind(
         response_format={"type": "json_object", "json_schema": SCHEMA_EXTRAER}
     )
@@ -62,8 +60,6 @@ def _construir_mensajes(estado: EstadoPipeline) -> list:
 
     return [system, HumanMessage(content=content)]
 
-# Textos de relleno que el modelo escribe cuando no hay dato (el esquema no le
-# permite devolver null). Nunca deben tratarse como información real.
 _RELLENOS = {
     "null", "none", "nil", "n/a", "na", "n.a", "-", "--", "?", "??", "???",
     "no disponible", "no especificado", "no identificado", "sin dato", "sin datos",
@@ -72,9 +68,6 @@ _RELLENOS = {
     "no especificada", "no identificada", "no indicado", "no indicada",
 }
 
-# Palabras de etiquetas del formulario ("Médico solicitante", "Registro profesional"...).
-# Si un nombre o matrícula está formado solo por estas palabras, el modelo copió la
-# etiqueta en vez del dato, y verificar_contra_texto no lo detecta (la etiqueta sí está en el texto).
 _PALABRAS_ETIQUETA = {
     "medico", "medica", "solicitante", "tratante", "responsable", "remitente", "firmante",
     "doctor", "doctora", "dr", "dra", "paciente", "nombre", "firma", "sello",
@@ -86,9 +79,7 @@ def _es_etiqueta(valor: str) -> bool:
     toks = _tokens(valor)
     return bool(toks) and all(t in _PALABRAS_ETIQUETA for t in toks)
 
-
 def _limpiar(valor, descartar_interrogaciones: bool = False):
-    """Convierte textos de relleno ('null', '???') en None. Deja pasar lo demás."""
     if not isinstance(valor, str):
         return valor
     v = valor.strip()
@@ -96,14 +87,11 @@ def _limpiar(valor, descartar_interrogaciones: bool = False):
         return None
     if v.lower().strip(" .:;()[]{}\"'") in _RELLENOS:
         return None
-    # Números de ejemplo que el modelo inventa cuando no ve el dato (12345, 123456789, 0000...)
     solo_digitos = re.sub(r"[\s.\-]", "", v)
     if re.fullmatch(r"0+|(\d)\1{3,}|1234\d{0,5}", solo_digitos):
         return None
-    # Nombres o matrículas con varios '?' (p. ej. "Dr. ???") no son datos reales
     if descartar_interrogaciones and v.count("?") >= 2:
         return None
-    # Etiqueta copiada como dato (p. ej. "Médico solicitante")
     if descartar_interrogaciones and _es_etiqueta(v):
         return None
     return v
@@ -116,22 +104,12 @@ def _a_lista(valor) -> list | None:
     limpios = [x for x in (_limpiar(i) for i in valor) if isinstance(x, str)]
     return limpios or None
 
-def _a_entero(valor) -> int | None:
-    if isinstance(valor, bool):
-        return None
-    if isinstance(valor, int):
-        return valor
-    if isinstance(valor, str):
-        m = re.search(r"\d+", valor)
-        return int(m.group()) if m else None
-    return None
-
 def _parsear_respuesta(raw: str) -> DatosExtraidos:
     data = json.loads(raw)
 
     # Paciente
     nombre_paciente = _limpiar(data.get("nombre_paciente"), True)
-    edad_paciente = _limpiar(data.get("edad_paciente"))
+    edad_paciente   = _limpiar(data.get("edad_paciente"))
     doc_paciente    = _limpiar(data.get("documento_paciente"), True)
     paciente = Paciente(
         nombre=nombre_paciente,
@@ -149,16 +127,13 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         especialidad=especialidad_medico,
     ) if any([nombre_medico, matricula_medico, especialidad_medico]) else None
 
-    # Signos Vitales
-    sv_raw = data.get("signos_vitales") or {}
-    if not isinstance(sv_raw, dict):
-        sv_raw = {}
-    pa = _limpiar(sv_raw.get("presion_arterial"))
-    fc = _limpiar(sv_raw.get("frecuencia_cardiaca"))
-    fr = _limpiar(sv_raw.get("frecuencia_respiratoria"))
-    spo2 = _limpiar(sv_raw.get("saturacion_oxigeno"))
-    temp = _limpiar(sv_raw.get("temperatura"))
-    glasgow = _limpiar(sv_raw.get("glasgow"))
+    # Signos Vitales (leídos directamente desde campos planos)
+    pa = _limpiar(data.get("presion_arterial"))
+    fc = _limpiar(data.get("frecuencia_cardiaca"))
+    fr = _limpiar(data.get("frecuencia_respiratoria"))
+    spo2 = _limpiar(data.get("saturacion_oxigeno"))
+    temp = _limpiar(data.get("temperatura"))
+    glasgow = _limpiar(data.get("glasgow"))
 
     signos_vitales = SignosVitales(
         presion_arterial=pa,
@@ -197,13 +172,11 @@ def _parsear_respuesta(raw: str) -> DatosExtraidos:
         campos_faltantes=_a_lista(data.get("campos_faltantes")),
     )
 
-# ── Verificación de lo extraído contra el texto fuente ──────────────────────────
 def _tokens(texto: str) -> list[str]:
     sin_tildes = "".join(
         c for c in unicodedata.normalize("NFKD", texto.lower()) if not unicodedata.combining(c)
     )
     return re.findall(r"[a-z0-9]+", sin_tildes)
-
 
 def _respaldado(valor: str, tokens_texto: set[str], minimo: float = 0.6,
                 largo_min: int = 3, solo_alfa: bool = False) -> bool:
@@ -218,9 +191,7 @@ def _respaldado(valor: str, tokens_texto: set[str], minimo: float = 0.6,
         return True
     return sum(t in tokens_texto for t in toks) / len(toks) >= minimo
 
-
 def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
-    """Descarta (pone en None) lo que no aparece en el texto. Devuelve qué se descartó."""
     tokens_texto = set(_tokens(texto))
     descartados: list[str] = []
 
@@ -266,8 +237,6 @@ def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
 
     return descartados
 
-
-# Campos obligatorios por tipo de documento.
 _OBLIGATORIOS: dict[TipoDocumento, list[str]] = {
     TipoDocumento.RECETA_MEDICA:        ["paciente", "médico", "matrícula", "medicamentos"],
     TipoDocumento.INFORME_IMAGENES:     ["paciente", "médico", "estudio realizado", "diagnóstico"],
@@ -301,127 +270,6 @@ def calcular_faltantes(datos: DatosExtraidos, tipo: TipoDocumento) -> list[str] 
     obligatorios = _OBLIGATORIOS.get(tipo, _OBLIGATORIOS[TipoDocumento.DESCONOCIDO])
     faltantes = [c for c in obligatorios if not _presente(datos, c)]
     return faltantes or None
-
-# ── Segunda pasada: pedir solo los campos obligatorios que faltaron ─────────────
-def segunda_pasada_activada() -> bool:
-    return os.getenv("MEDIFLOW_SEGUNDA_PASADA", "1") != "0"
-
-_CLAVES_POR_CAMPO = {
-    "paciente": ["nombre_paciente"],
-    "médico": ["nombre_medico"],
-    "matrícula": ["matricula_medico"],
-    "estudio realizado": ["estudio_realizado"],
-    "diagnóstico": ["diagnostico_principal"],
-    "medicamentos": ["medicamentos"],
-    "estudios solicitados": ["estudios_solicitados"],
-}
-
-_PISTAS = {
-    "nombre_paciente": 'nombre del paciente ("Paciente:", nombres propios)',
-    "nombre_medico": 'nombre del médico ("Dr.", "Dra.", "Médico:", "Solicitante:", o junto a la firma o el sello)',
-    "matricula_medico": 'matrícula o registro profesional del médico ("MP", "Reg.", "Matrícula")',
-    "estudio_realizado": "estudio cuyo resultado reporta el documento",
-    "diagnostico_principal": 'diagnóstico en una línea breve ("Diagnóstico", "Dx", "Conclusión", "Diagnóstico de egreso")',
-    "medicamentos": "medicamentos con nombre, dosis, frecuencia y duración",
-    "estudios_solicitados": "estudios o procedimientos que el documento solicita",
-}
-
-SYSTEM_COMPLETAR = """Eres un extractor de entidades clínicas. En una primera lectura no se encontraron algunos datos. Busca SOLO los datos que se piden, leyendo todo el documento, incluidos sellos, firmas y pies de página.
-
-REGLAS:
-- Extrae EXACTAMENTE lo que está escrito. NUNCA inventes ni uses valores de ejemplo.
-- Si un dato realmente NO aparece, omite ese campo.
-- Responde ÚNICAMENTE con el JSON."""
-
-
-def _get_llm_completar(schema: dict):
-    llm = ChatCohere(model=MODELO_TEXTO, temperature=0.0)
-    return llm.bind(response_format={"type": "json_object", "json_schema": schema})
-
-
-def _esquema_parcial(claves: list[str]) -> dict:
-    return {
-        "type": "object",
-        "properties": {k: SCHEMA_EXTRAER["properties"][k] for k in claves},
-        "required": claves,
-    }
-
-
-def _fusionar(datos: DatosExtraidos, nuevo: DatosExtraidos) -> list[str]:
-    recuperados: list[str] = []
-
-    if not (datos.paciente and datos.paciente.nombre) and nuevo.paciente and nuevo.paciente.nombre:
-        datos.paciente = datos.paciente or Paciente()
-        datos.paciente.nombre = nuevo.paciente.nombre
-        recuperados.append("paciente")
-
-    nm = nuevo.medico_solicitante
-    if nm and nm.nombre and not (datos.medico_solicitante and datos.medico_solicitante.nombre):
-        datos.medico_solicitante = datos.medico_solicitante or MedicoSolicitante()
-        datos.medico_solicitante.nombre = nm.nombre
-        recuperados.append("médico")
-    if nm and nm.matricula and not (datos.medico_solicitante and datos.medico_solicitante.matricula):
-        datos.medico_solicitante = datos.medico_solicitante or MedicoSolicitante()
-        datos.medico_solicitante.matricula = nm.matricula
-        recuperados.append("matrícula")
-
-    if not datos.signos_vitales and nuevo.signos_vitales:
-        datos.signos_vitales = nuevo.signos_vitales
-
-    for campo, etiqueta in (
-        ("estudio_realizado", "estudio realizado"),
-        ("diagnostico_principal", "diagnóstico"),
-        ("medicamentos", "medicamentos"),
-        ("estudios_solicitados", "estudios solicitados"),
-    ):
-        if not getattr(datos, campo) and getattr(nuevo, campo):
-            setattr(datos, campo, getattr(nuevo, campo))
-            recuperados.append(etiqueta)
-
-    return recuperados
-
-
-def aplicar_faltantes(estado: EstadoPipeline) -> None:
-    if not estado.datos_extraidos or estado.error:
-        return
-    tipo = estado.clasificacion.tipo_documento if estado.clasificacion else TipoDocumento.DESCONOCIDO
-    estado.datos_extraidos.campos_faltantes = calcular_faltantes(estado.datos_extraidos, tipo)
-
-
-def completar_extraccion(estado: EstadoPipeline) -> list[str]:
-    datos = estado.datos_extraidos
-    if not datos or not datos.campos_faltantes or not (estado.texto and estado.texto.strip()):
-        return []
-
-    claves = [k for campo in datos.campos_faltantes for k in _CLAVES_POR_CAMPO.get(campo, [])]
-    if not claves:
-        return []
-
-    logger.info(f"[EXTRAER] {estado.documento_id}: segunda pasada para {datos.campos_faltantes}")
-    try:
-        pistas = "\n".join(f"- {k}: {_PISTAS[k]}" for k in claves)
-        prompt = f"DATOS A BUSCAR:\n{pistas}\n\nDOCUMENTO:\n{estado.texto[:8000]}"
-        response = invocar_con_reintentos(
-            _get_llm_completar(_esquema_parcial(claves)),
-            [SystemMessage(content=SYSTEM_COMPLETAR), HumanMessage(content=prompt)],
-        )
-        if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
-            logger.info(f"[EXTRAER] segunda pasada, respuesta cruda: {response.content}")
-
-        nuevo = _parsear_respuesta(response.content)
-        verificar_contra_texto(nuevo, estado.texto)
-        recuperados = _fusionar(datos, nuevo)
-    except Exception as e:
-        logger.warning(f"[EXTRAER] {estado.documento_id}: la segunda pasada falló ({e}); se sigue sin ella.")
-        return []
-
-    aplicar_faltantes(estado)
-    logger.info(
-        f"[EXTRAER] {estado.documento_id}: segunda pasada recuperó {recuperados} | "
-        f"faltantes ahora={estado.datos_extraidos.campos_faltantes or []}"
-    )
-    return recuperados
-
 
 def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
     logger.info(f"[EXTRAER] {estado.documento_id}")
