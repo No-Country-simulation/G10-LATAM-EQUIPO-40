@@ -28,6 +28,8 @@ REGLAS = [
     ("[ENRUTAR]",                 "Decidiendo a dónde enviarlo…"),
     ("[HITL]",                    "Derivando a revisión humana…"),
     ("[GUARDAR]",                 "Guardando el expediente…"),
+    ("[OCI] Error",               "Guardando respaldo (modo simulado)…"),
+    ("[OCI-SIM] Guardado",        "Respaldo local guardado."),
 ]
 
 def _traducir(mensaje: str) -> str | None:
