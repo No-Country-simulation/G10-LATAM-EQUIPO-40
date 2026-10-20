@@ -421,7 +421,7 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
     Nodo 2 del pipeline.
     Recibe EstadoPipeline, puebla estado.datos_extraidos y lo devuelve.
     """
-    logger.info(f"[EXTRAER] {estado.documento_id}")
+    logger.info("[EXTRAER] Extrayendo entidades clínicas de %s", estado.documento_id)
 
     tiene_texto = bool(estado.texto and estado.texto.strip())
 

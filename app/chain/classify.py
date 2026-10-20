@@ -79,7 +79,7 @@ def nodo_clasificar(estado: EstadoPipeline) -> EstadoPipeline:
     Nodo 1 del pipeline.
     Recibe EstadoPipeline, puebla estado.clasificacion y lo devuelve.
     """
-    logger.info(f"[CLASIFICAR] {estado.documento_id}")
+    logger.info("[CLASIFICAR] Iniciando clasificación de %s", estado.documento_id)
 
     tiene_texto = bool(estado.texto and estado.texto.strip())
 

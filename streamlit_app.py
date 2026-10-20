@@ -16,8 +16,9 @@ load_dotenv()
 from enum import Enum
 
 import streamlit as st
-
 from app.ui_progreso import progreso
+from app.chain.pipeline import ejecutar_pipeline
+from app.models.schemas import EstadoPipeline
 
 from app.storage.revision import leer_objeto, listar_pendientes, registrar_revision
 from app.streamlit_bridge import procesar_archivo, procesar_texto
@@ -397,7 +398,7 @@ def _tab_ingesta():
 
         if metodo == "📎 Subir PDF o Imagen":
             if not archivo:
-                st.warning("⚠️ Seleccioná un archivo primero.")
+                st.warning("⚠️ Selecciona un archivo primero.")
                 return
 
             with progreso():

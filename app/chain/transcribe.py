@@ -100,7 +100,7 @@ def nodo_transcribir(estado: EstadoPipeline) -> EstadoPipeline:
     - Fallo de la API         -> estado intacto (se usa la lectura directa de imágenes).
     """
     imagenes = (estado.imagenes_data_url or [])[:MAX_PAGINAS]
-    logger.info(f"[OCR] {estado.documento_id} ({len(imagenes)} página(s))")
+    logger.info("[OCR] Procesando %d páginas…", len(estado.imagenes_data_url))
 
     try:
         with ThreadPoolExecutor(max_workers=len(imagenes) or 1) as pool:
