@@ -77,6 +77,7 @@ REGLAS ESTRICTAS:
 - edad_paciente: extrae la edad exactamente como aparece en el documento, incluyendo su unidad. Usa formatos como "45 años", "8 meses" o "15 días". No conviertas meses o días a años. Si solo aparece el número sin unidad, conserva el número sin inventar la unidad. Si la edad no aparece o es ilegible, omite el campo.
 - nombre del médico: busca "Dr.", "Dra.", "Médico:", "Médico Asignado:", "Solicitante:". Matrícula: "MP", "Reg", "Matrícula", "Registro Médico", junto al nombre o sello del profesional.
 - diagnostico_principal: UNA línea breve (máximo 15 palabras) con la entidad clínica. Búscala en "Diagnóstico:", "Dx:", "Criterio Clínico:", "Motivo de consulta", "Conclusión:". Si es dudoso o ilegible, omítelo.
+- constantes y signos vitales (presion_arterial, frecuencia_cardiaca, frecuencia_respiratoria, saturacion_oxigeno, temperatura, glasgow): extrae el valor tal como aparece en notas de urgencia o triaje. Si no existen, omite el campo.
 - estudio_realizado: solo si el documento reporta el resultado de un estudio ya hecho (informe de imágenes o de laboratorio). En recetas, órdenes, triajes o epicrisis no lo completes.
 - estudios_solicitados: el procedimiento o estudio pedido en órdenes y solicitudes.
 - medicamentos: nombre, dosis, frecuencia y duración, por separado.
@@ -93,15 +94,21 @@ PROMPT_EXTRAER_IMAGEN = "Extrae todas las entidades clínicas del documento que 
 SCHEMA_EXTRAER = {
     "type": "object",
     "properties": {
-        "nombre_paciente":      {"type": "string"},
-        "edad_paciente":        {"type": "string"},
-        "documento_paciente":   {"type": "string"},
-        "nombre_medico":        {"type": "string"},
-        "matricula_medico":     {"type": "string"},
-        "especialidad_medico":  {"type": "string"},
-        "estudio_realizado":    {"type": "string"},
-        "diagnostico_principal":{"type": "string"},
-        "cie10_sugerido":       {"type": "string"},
+        "nombre_paciente":         {"type": "string"},
+        "edad_paciente":           {"type": "string"},
+        "documento_paciente":      {"type": "string"},
+        "nombre_medico":           {"type": "string"},
+        "matricula_medico":        {"type": "string"},
+        "especialidad_medico":     {"type": "string"},
+        "estudio_realizado":       {"type": "string"},
+        "diagnostico_principal":   {"type": "string"},
+        "cie10_sugerido":          {"type": "string"},
+        "presion_arterial":        {"type": "string"},
+        "frecuencia_cardiaca":     {"type": "string"},
+        "frecuencia_respiratoria": {"type": "string"},
+        "saturacion_oxigeno":      {"type": "string"},
+        "temperatura":             {"type": "string"},
+        "glasgow":                 {"type": "string"},
         "medicamentos": {
             "type": "array",
             "items": {
@@ -115,9 +122,9 @@ SCHEMA_EXTRAER = {
                 "required": ["nombre"],
             },
         },
-        "estudios_solicitados": {"type": "array", "items": {"type": "string"}},
-        "hallazgos_criticos":   {"type": "array", "items": {"type": "string"}},
-        "campos_faltantes":     {"type": "array", "items": {"type": "string"}},
+        "estudios_solicitados":    {"type": "array", "items": {"type": "string"}},
+        "hallazgos_criticos":      {"type": "array", "items": {"type": "string"}},
+        "campos_faltantes":        {"type": "array", "items": {"type": "string"}},
     },
     "required": ["campos_faltantes"],
 }
