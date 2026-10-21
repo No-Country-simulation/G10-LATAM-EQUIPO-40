@@ -153,7 +153,7 @@ def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
     )
 
 def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
-    logger.info(f"[ENRUTAR] {estado.documento_id}")
+    logger.info("[ENRUTAR] Aplicando reglas de enrutamiento…")
     for regla in [_regla_error, _regla_confianza_baja, _regla_urgencia, _regla_auditoria]:
         decision = regla(estado)
         if decision is not None:

@@ -11,3 +11,4 @@ __pycache__/
 .vscode/
 
 oci_storage_local/auditoria_humana
+oci_simulado/
