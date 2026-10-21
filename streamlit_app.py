@@ -16,8 +16,9 @@ load_dotenv()
 from enum import Enum
 
 import streamlit as st
-
 from app.ui_progreso import progreso
+from app.chain.pipeline import ejecutar_pipeline
+from app.models.schemas import EstadoPipeline
 
 from app.storage.revision import leer_objeto, listar_pendientes, registrar_revision
 from app.streamlit_bridge import procesar_archivo, procesar_texto
@@ -147,6 +148,16 @@ def _estilos():
         .chip-alta    { background-color: #ffedd5; color: #9a3412; }
         .chip-normal  { background-color: #dbeafe; color: #1e40af; }
         .chip-baja    { background-color: #dcfce7; color: #166534; }
+
+        /* Ajuste de métricas para que la Presión Arterial no se trunque */
+        [data-testid="stMetricValue"] {
+            font-size: 1.20rem !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.85rem !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -246,7 +257,7 @@ def _mostrar_resultado(
 
     st.divider()
 
-    # ── H5: Datos extraídos (una sola columna, H6 por grupo) ──
+    # ── H5: Datos extraídos ──
     st.markdown("##### 📋 Datos Extraídos")
     datos = resultado.get("datos_extraidos")
     if datos:
@@ -263,12 +274,21 @@ def _mostrar_resultado(
         if medico.get("matricula"):
             st.write(f"🪪 **Matrícula:** {medico['matricula']}")
 
-        if datos.get("diagnostico_principal") or datos.get("cie10_sugerido"):
-            st.markdown("###### Diagnóstico")
-            if datos.get("diagnostico_principal"):
-                st.write(f"🔬 **Principal:** {datos['diagnostico_principal']}")
-            if datos.get("cie10_sugerido"):
-                st.write(f"📌 **CIE-10:** {datos['cie10_sugerido']}")
+        # ── Diagnóstico Clínico / Estado de Evaluación ──
+        tipo_doc = _txt(clf.get("tipo_documento"), usar_nombre=True) if clf else ""
+        dx = datos.get("diagnostico_principal")
+        cie = datos.get("cie10_sugerido")
+
+        st.markdown("###### Diagnóstico")
+        if dx:
+            st.write(f"🔬 **Principal:** {dx}")
+            if cie:
+                st.write(f"📌 **CIE-10:** {cie}")
+        elif tipo_doc == "HOJA_TRIAJE":
+            esp = (clf.get("especialidad") if clf else None) or "Medicina de Urgencias"
+            st.info(f"⏳ **A la espera de evaluación médica** por especialista derivado ({esp}).")
+        else:
+            st.caption("Sin diagnóstico consignado en el documento.")
 
         # ── Signos Vitales y Constantes Fisiológicas ──
         sv = datos.get("signos_vitales")
@@ -290,6 +310,17 @@ def _mostrar_resultado(
                     st.metric("Frec. Resp. (FR)", sv_dict.get("frecuencia_respiratoria") or "—")
                     st.metric("Glasgow", sv_dict.get("glasgow") or "—")
 
+        # ── Estudios y Exámenes de Laboratorio / Imágenes ──
+        estudio_hecho = datos.get("estudio_realizado")
+        estudios_pedidos = datos.get("estudios_solicitados") or []
+        if estudio_hecho or estudios_pedidos:
+            st.markdown("###### 🧪 Estudios y Exámenes Clínicos")
+            if estudio_hecho:
+                st.write(f"🔬 **Estudio realizado:** {estudio_hecho}")
+            if estudios_pedidos:
+                st.markdown("**Estudios solicitados:**\n" + "\n".join(f"- 📋 {e}" for e in estudios_pedidos))
+
+        # ── Medicamentos ──
         meds = datos.get("medicamentos") or []
         if meds:
             st.markdown("###### Medicamentos")
@@ -300,12 +331,14 @@ def _mostrar_resultado(
                 )
             )
 
+        # ── Hallazgos Críticos ──
         hallazgos = datos.get("hallazgos_criticos") or []
         if hallazgos:
             st.markdown("###### Hallazgos críticos")
             for h in hallazgos:
                 st.error(f"🚨 {h}")
 
+        # ── Campos Faltantes ──
         faltantes = datos.get("campos_faltantes") or []
         if faltantes:
             st.markdown("###### Campos faltantes")
@@ -315,7 +348,6 @@ def _mostrar_resultado(
 
     st.divider()
     if anidado:
-        # Streamlit no permite expanders dentro de expanders
         st.markdown("###### JSON completo")
         st.json(resultado, expanded=False)
     else:
@@ -380,7 +412,6 @@ def _tab_ingesta():
                 type=["pdf", "png", "jpg", "jpeg"],
             )
 
-            # El botón va ANTES de la previsualización
             btn = st.button(
                 "🚀 Procesar con MediFlow",
                 type="primary",
@@ -417,7 +448,7 @@ def _tab_ingesta():
 
         if metodo == "📎 Subir PDF o Imagen":
             if not archivo:
-                st.warning("⚠️ Seleccioná un archivo primero.")
+                st.warning("⚠️ Selecciona un archivo primero.")
                 return
 
             with progreso():
@@ -441,7 +472,6 @@ def _tab_ingesta():
 
         st.success("✅ Procesamiento completado.")
 
-        # Determinar badge según resultado
         decision = resultado.get("decision") or {}
         clf = resultado.get("clasificacion") or {}
         destino = decision.get("destino", "")
@@ -475,10 +505,8 @@ def _tab_casos():
             if st.button("▶ Ejecutar", key=caso["id"], use_container_width=True):
                 caso_a_ejecutar = caso
 
-    # Fuera de las columnas: todo lo siguiente ocupa el ancho completo
     if caso_a_ejecutar:
         resultado = _ejecutar_caso(caso_a_ejecutar)
-        # Si el mismo demo ya estaba, se descarta el anterior y queda el nuevo
         previos = [
             d for d in st.session_state.demos_ejecutadas
             if d["caso"]["id"] != caso_a_ejecutar["id"]
@@ -493,7 +521,6 @@ def _tab_casos():
         st.markdown("#### Resultados")
         for i, demo in enumerate(demos):
             caso = demo["caso"]
-            # Solo el más reciente aparece desplegado; los demás, plegados
             with st.expander(f"{caso['label']} — {caso['badge_texto']}", expanded=(i == 0)):
                 _mostrar_resultado(
                     demo["resultado"],
@@ -505,7 +532,6 @@ def _tab_casos():
 @st.cache_data(ttl=300, show_spinner=False)
 def _cargar_original(ruta: str):
     return leer_objeto(ruta)
-
 
 def _mostrar_original(ruta: str | None, clave: str):
     if not ruta:
@@ -520,7 +546,6 @@ def _mostrar_original(ruta: str | None, clave: str):
         try:
             st.image(datos, width="stretch")
         except Exception:
-            # Justo los archivos dañados son los que llegan a revisión humana
             st.warning("El archivo no se puede previsualizar (posiblemente está dañado).")
             st.download_button(
                 "⬇️ Descargar archivo original", datos,
@@ -537,7 +562,6 @@ def _mostrar_original(ruta: str | None, clave: str):
             height=160, disabled=True, key=f"txt_{clave}",
         )
 
-
 def _resolver_expediente(idx: int, doc_id: str, decision: str):
     res = registrar_revision(doc_id, decision)
     st.session_state.cola_hitl.pop(idx)
@@ -548,7 +572,6 @@ def _resolver_expediente(idx: int, doc_id: str, decision: str):
             "warn", f"Expediente {doc_id} {decision}, pero el registro quedó solo en local ({res['status']}).",
         )
     st.rerun()
-
 
 def _tab_hitl():
     st.subheader("Consola de Auditoría Human-in-the-Loop")
