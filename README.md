@@ -2,7 +2,7 @@
 Proyecto 2 – 🏥 MediFlow – Agente Autónomo para Triaje, Extracción y Enrutamiento de Documentos Clínicos
 ## 🖥️ Interfaz de Usuario y Experiencia Clínica (Streamlit)
 
-**Desarrollado por:** Jimmy (Frontend & Conexión) y [Kenia (Diseño UI/UX)]
+**Desarrollado por:** Jimmy (Frontend & Conexión)
 
 La interfaz de **MediFlow** fue construida como un panel interactivo de salud (*HealthTech*) sobre **Streamlit**, enfocado en la usabilidad del personal médico y auditores clínicos. Se estructura en tres módulos operativos diseñados para cubrir el ciclo completo de procesamiento y la evaluación del jurado:
 
