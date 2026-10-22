@@ -5,8 +5,10 @@ Demo visual del agente autónomo de triaje clínico.
 
 from __future__ import annotations
 
+import io
 import logging
 import time
+import zipfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,6 +19,7 @@ from enum import Enum
 
 import streamlit as st
 from app.ui_progreso import progreso
+
 from app.chain.pipeline import ejecutar_pipeline
 from app.models.schemas import EstadoPipeline
 
@@ -382,6 +385,37 @@ def limpiar_entrada():
     st.session_state.pop("resultado", None)  # ajusta al nombre que uses
 
 
+def _expandir_archivos(archivos) -> list[tuple[str, bytes, str]]:
+    """Expande una lista de UploadedFile en (nombre, bytes, mime).
+
+    Los ZIP se descomprimen en memoria y se filtran imágenes/PDF internos.
+    """
+    pendientes: list[tuple[str, bytes, str]] = []
+    for a in archivos:
+        nombre = a.name
+        contenido = a.getvalue()
+        if nombre.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(contenido)) as z:
+                    for inner in z.namelist():
+                        if inner.endswith("/"):
+                            continue
+                        ext = Path(inner).suffix.lower()
+                        mime_map = {
+                            ".png": "image/png",
+                            ".jpg": "image/jpeg",
+                            ".jpeg": "image/jpeg",
+                            ".pdf": "application/pdf",
+                        }
+                        if ext in mime_map:
+                            pendientes.append((inner, z.read(inner), mime_map[ext]))
+            except zipfile.BadZipFile:
+                st.error(f"El archivo `{nombre}` no es un ZIP válido.")
+        else:
+            pendientes.append((nombre, contenido, a.type))
+    return pendientes
+
+
 def _tab_ingesta():
     if "input_key" not in st.session_state:
         st.session_state.input_key = 0
@@ -410,13 +444,14 @@ def _tab_ingesta():
             ],
         )
 
-        archivo = None
+        archivos = []
         texto = ""
 
         if metodo == "📎 Subir PDF o Imagen":
-            archivo = st.file_uploader(
-                "Seleccioná el documento clínico:",
-                type=["pdf", "png", "jpg", "jpeg"],
+            archivos = st.file_uploader(
+                "Seleccioná uno o varios documentos (PDF, imágenes o ZIP):",
+                type=["pdf", "png", "jpg", "jpeg", "zip"],
+                accept_multiple_files=True,
                 key=f"uploader_{st.session_state.input_key}",
             )
         else:
@@ -427,7 +462,7 @@ def _tab_ingesta():
                 key=f"texto_{st.session_state.input_key}",
             )
 
-        hay_contenido = archivo is not None or bool(texto.strip())
+        hay_contenido = bool(archivos) or bool(texto.strip())
 
         # Reserva el lugar del botón (encima de Procesar)
         espacio_boton = st.empty()
@@ -455,64 +490,103 @@ def _tab_ingesta():
                 key="btn_limpiar",
             )
 
-        if archivo:
-            st.caption(f"`{archivo.name}` — {round(archivo.size / 1024, 1)} KB")
-            if archivo.type.startswith("image/"):
-                st.image(archivo, width="stretch")
-    
+        if archivos:
+            st.caption(f"{len(archivos)} archivo(s) seleccionado(s):")
+            for a in archivos:
+                st.caption(f"• `{a.name}` — {round(a.size / 1024, 1)} KB")
+                # Previsualización solo si es imagen única y no ZIP
+                if a.type and a.type.startswith("image/"):
+                    st.image(a, width="stretch")
+
     with col_output:
         st.markdown("#### 2. Resultado del Agente")
-    
+
         if not btn:
             st.info("El resultado aparecerá aquí luego de procesar.")
             return
-    
+
         try:
-            doc_id = f"DOC-{int(time.time())}"
-    
-            if metodo == "📎 Subir PDF o Imagen":
-                if not archivo:
-                    st.warning("⚠️ Selecciona un archivo primero.")
-                    return
-    
-                with progreso():
-                    resultado = procesar_archivo(
-                        documento_id=doc_id,
-                        canal=canal,
-                        contenido=archivo.getvalue(),
-                        mime=archivo.type,
-                    )
-            else:
+            # ── Caso texto manual (sin cambios) ──
+            if metodo == "✏️ Transcripción Manual":
                 if not texto.strip():
                     st.warning("⚠️ Ingresá un texto primero.")
                     return
-    
+
+                doc_id = f"DOC-{int(time.time())}"
                 with progreso():
                     resultado = procesar_texto(
                         documento_id=doc_id,
                         canal=canal,
                         texto=texto,
                     )
-    
-            st.success("✅ Procesamiento completado.")
-    
-            decision = resultado.get("decision") or {}
-            clf = resultado.get("clasificacion") or {}
-            destino = decision.get("destino", "")
-            prioridad = clf.get("nivel_prioridad", "")
-    
-            if "Emergencia" in destino or prioridad == "Urgente":
-                badge, badge_texto = "urgente", "🚨 PRIORIDAD CRÍTICA"
-            elif decision.get("requiere_revision_humana"):
-                badge, badge_texto = "hitl", "⚠️ RETENIDO EN AUDITORÍA"
-            else:
-                badge, badge_texto = "rutina", "🟢 FLUJO ESTÁNDAR"
-    
-            _mostrar_resultado(resultado, badge=badge, badge_texto=badge_texto)
-    
-            if decision.get("requiere_revision_humana"):
-                st.session_state.cola_hitl.append(resultado)
-    
+
+                st.success("✅ Procesamiento completado.")
+                _mostrar_resultado(resultado)
+                return
+
+            # ── Caso archivos (batch) ──
+            if not archivos:
+                st.warning("⚠️ Seleccioná al menos un archivo.")
+                return
+
+            pendientes = _expandir_archivos(archivos)
+            if not pendientes:
+                st.warning("⚠️ No hay archivos válidos para procesar.")
+                return
+
+            st.info(
+                f"📦 {len(pendientes)} archivo(s) a procesar "
+                f"(de {len(archivos)} seleccionado(s))."
+            )
+
+            barra = st.progress(0.0, text="Procesando lote...")
+            resultados: list[tuple[str, dict]] = []
+            errores: list[tuple[str, str]] = []
+
+            for i, (nombre, contenido, mime) in enumerate(pendientes, start=1):
+                doc_id = f"DOC-{int(time.time())}-{i}"
+                barra.progress(
+                    i / len(pendientes),
+                    text=f"[{i}/{len(pendientes)}] {nombre}",
+                )
+                try:
+                    with progreso():
+                        res = procesar_archivo(
+                            documento_id=doc_id,
+                            canal=canal,
+                            contenido=contenido,
+                            mime=mime,
+                        )
+                    resultados.append((nombre, res))
+                    if (res.get("decision") or {}).get("requiere_revision_humana"):
+                        st.session_state.cola_hitl.append(res)
+                except Exception as e:
+                    errores.append((nombre, str(e)))
+
+            barra.empty()
+
+            # ── Resumen del lote ──
+            st.success(
+                f"✅ Lote completado: {len(resultados)} OK"
+                + (f", {len(errores)} con error" if errores else "")
+            )
+
+            if errores:
+                with st.expander(f"⚠️ {len(errores)} archivo(s) con error"):
+                    for nombre, msg in errores:
+                        st.error(f"`{nombre}`: {msg}")
+
+            # ── Resultados por archivo ──
+            if len(resultados) == 1:
+                nombre, res = resultados[0]
+                st.caption(f"Archivo: `{nombre}`")
+                _mostrar_resultado(res)
+            elif resultados:
+                tabs_res = st.tabs([f"📄 {n}" for n, _ in resultados])
+                for tab, (nombre, res) in zip(tabs_res, resultados):
+                    with tab:
+                        _mostrar_resultado(res, anidado=True)
+
         finally:
             # Se ejecuta siempre: éxito, error o return temprano
             espacio_boton.button(
