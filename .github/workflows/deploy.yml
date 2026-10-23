@@ -2,9 +2,7 @@ name: Build and Deploy MediFlow
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main]
     paths:
       - 'app/**'
       - 'main.py'

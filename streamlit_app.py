@@ -377,7 +377,15 @@ def _ejecutar_caso(caso: dict) -> dict:
 
     return resultado
 
+def limpiar_entrada():
+    st.session_state.input_key += 1
+    st.session_state.pop("resultado", None)  # ajusta al nombre que uses
+
+
 def _tab_ingesta():
+    if "input_key" not in st.session_state:
+        st.session_state.input_key = 0
+
     st.subheader("Ingesta y Triaje de Documentos Clínicos")
 
     col_input, col_output = st.columns([1, 1], gap="large")
@@ -404,90 +412,116 @@ def _tab_ingesta():
 
         archivo = None
         texto = ""
-        btn = False
 
         if metodo == "📎 Subir PDF o Imagen":
             archivo = st.file_uploader(
                 "Seleccioná el documento clínico:",
                 type=["pdf", "png", "jpg", "jpeg"],
+                key=f"uploader_{st.session_state.input_key}",
             )
-
-            btn = st.button(
-                "🚀 Procesar con MediFlow",
-                type="primary",
-                use_container_width=True,
-                key="btn_procesar_archivo",
-            )
-
-            if archivo:
-                st.caption(f"`{archivo.name}` — {round(archivo.size / 1024, 1)} KB")
-                if archivo.type.startswith("image/"):
-                    st.image(archivo, width="stretch")
-
         else:
             texto = st.text_area(
                 "Pegá o escribí el contenido del documento:",
                 height=220,
                 placeholder="Ingresá el informe, receta u orden médica...",
-            )
-            btn = st.button(
-                "🚀 Procesar con MediFlow",
-                type="primary",
-                use_container_width=True,
-                key="btn_procesar_texto",
+                key=f"texto_{st.session_state.input_key}",
             )
 
+        hay_contenido = archivo is not None or bool(texto.strip())
+
+        # Reserva el lugar del botón (encima de Procesar)
+        espacio_boton = st.empty()
+
+        btn = st.button(
+            "🚀 Procesar con MediFlow",
+            type="primary",
+            use_container_width=True,
+            key="btn_procesar",
+        )
+
+        # Se dibuja DESPUÉS de saber si se pulsó "Procesar"
+        if btn and hay_contenido:
+            espacio_boton.button(
+                "🛑 Cancelar Procesamiento",
+                use_container_width=True,
+                key="btn_cancelar",
+            )
+        else:
+            espacio_boton.button(
+                "🗑️ Limpiar Campo",
+                on_click=limpiar_entrada,
+                disabled=not hay_contenido,
+                use_container_width=True,
+                key="btn_limpiar",
+            )
+
+        if archivo:
+            st.caption(f"`{archivo.name}` — {round(archivo.size / 1024, 1)} KB")
+            if archivo.type.startswith("image/"):
+                st.image(archivo, width="stretch")
+    
     with col_output:
         st.markdown("#### 2. Resultado del Agente")
-
+    
         if not btn:
             st.info("El resultado aparecerá aquí luego de procesar.")
             return
-
-        doc_id = f"DOC-{int(time.time())}"
-
-        if metodo == "📎 Subir PDF o Imagen":
-            if not archivo:
-                st.warning("⚠️ Selecciona un archivo primero.")
-                return
-
-            with progreso():
-                resultado = procesar_archivo(
-                    documento_id=doc_id,
-                    canal=canal,
-                    contenido=archivo.getvalue(),
-                    mime=archivo.type,
-                )
-        else:
-            if not texto.strip():
-                st.warning("⚠️ Ingresá un texto primero.")
-                return
-
-            with progreso():
-                resultado = procesar_texto(
-                    documento_id=doc_id,
-                    canal=canal,
-                    texto=texto,
-                )
-
-        st.success("✅ Procesamiento completado.")
-
-        decision = resultado.get("decision") or {}
-        clf = resultado.get("clasificacion") or {}
-        destino = decision.get("destino", "")
-        prioridad = clf.get("nivel_prioridad", "")
-
-        if "Emergencia" in destino or prioridad == "Urgente":
-            badge, badge_texto = "urgente", "🚨 PRIORIDAD CRÍTICA"
-        elif decision.get("requiere_revision_humana"):
-            badge, badge_texto = "hitl", "⚠️ RETENIDO EN AUDITORÍA"
-        else:
-            badge, badge_texto = "rutina", "🟢 FLUJO ESTÁNDAR"
-
-        _mostrar_resultado(resultado, badge=badge, badge_texto=badge_texto)
-
-        if decision.get("requiere_revision_humana"):
-            st.session_state.cola_hitl.append(resultado)
+    
+        try:
+            doc_id = f"DOC-{int(time.time())}"
+    
+            if metodo == "📎 Subir PDF o Imagen":
+                if not archivo:
+                    st.warning("⚠️ Selecciona un archivo primero.")
+                    return
+    
+                with progreso():
+                    resultado = procesar_archivo(
+                        documento_id=doc_id,
+                        canal=canal,
+                        contenido=archivo.getvalue(),
+                        mime=archivo.type,
+                    )
+            else:
+                if not texto.strip():
+                    st.warning("⚠️ Ingresá un texto primero.")
+                    return
+    
+                with progreso():
+                    resultado = procesar_texto(
+                        documento_id=doc_id,
+                        canal=canal,
+                        texto=texto,
+                    )
+    
+            st.success("✅ Procesamiento completado.")
+    
+            decision = resultado.get("decision") or {}
+            clf = resultado.get("clasificacion") or {}
+            destino = decision.get("destino", "")
+            prioridad = clf.get("nivel_prioridad", "")
+    
+            if "Emergencia" in destino or prioridad == "Urgente":
+                badge, badge_texto = "urgente", "🚨 PRIORIDAD CRÍTICA"
+            elif decision.get("requiere_revision_humana"):
+                badge, badge_texto = "hitl", "⚠️ RETENIDO EN AUDITORÍA"
+            else:
+                badge, badge_texto = "rutina", "🟢 FLUJO ESTÁNDAR"
+    
+            _mostrar_resultado(resultado, badge=badge, badge_texto=badge_texto)
+    
+            if decision.get("requiere_revision_humana"):
+                st.session_state.cola_hitl.append(resultado)
+    
+        finally:
+            # Se ejecuta siempre: éxito, error o return temprano
+            espacio_boton.button(
+                "🗑️ Limpiar",
+                on_click=limpiar_entrada,
+                disabled=not hay_contenido,
+                use_container_width=True,
+                key="btn_limpiar_final",
+            )
 
 def _tab_casos():
     st.subheader("Escenarios Clínicos Reglamentarios")
