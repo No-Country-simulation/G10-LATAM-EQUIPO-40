@@ -16,8 +16,12 @@ from app.storage.revision import guardar_original
 
 def procesar_texto(documento_id: str, canal: str, texto: str) -> dict:
     """Para el tab de Transcripción Manual y Casos Demo."""
-    marcar_como_recibido(documento_id, {"documento_id": documento_id, "canal_origen": canal})
-    ruta_original = guardar_original(documento_id, "text/plain", texto.encode("utf-8"))
+    marcar_como_recibido(
+        documento_id, {"documento_id": documento_id, "canal_origen": canal}
+    )
+    ruta_original = guardar_original(
+        documento_id, "text/plain", texto.encode("utf-8")
+    )
 
     estado = EstadoPipeline(
         documento_id=documento_id,
@@ -30,9 +34,13 @@ def procesar_texto(documento_id: str, canal: str, texto: str) -> dict:
     return _serializar(estado, oci, ruta_original)
 
 
-def procesar_archivo(documento_id: str, canal: str, contenido: bytes, mime: str) -> dict:
+def procesar_archivo(
+    documento_id: str, canal: str, contenido: bytes, mime: str
+) -> dict:
     """Para el tab de Ingesta con archivo real."""
-    marcar_como_recibido(documento_id, {"documento_id": documento_id, "canal_origen": canal})
+    marcar_como_recibido(
+        documento_id, {"documento_id": documento_id, "canal_origen": canal}
+    )
     ruta_original = guardar_original(documento_id, mime, contenido)
 
     es_pdf = mime == "application/pdf"
@@ -44,7 +52,9 @@ def procesar_archivo(documento_id: str, canal: str, contenido: bytes, mime: str)
 
     try:
         if es_pdf:
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                suffix=".pdf", delete=False
+            ) as tmp:
                 tmp.write(contenido)
                 tmp_path = tmp.name
             try:
@@ -56,7 +66,9 @@ def procesar_archivo(documento_id: str, canal: str, contenido: bytes, mime: str)
                 estado.error = resultado.get("texto")
             else:
                 estado.texto = resultado.get("texto") or None
-                estado.imagenes_data_url = resultado.get("imagenes_data_url") or None
+                estado.imagenes_data_url = (
+                    resultado.get("imagenes_data_url") or None
+                )
         else:
             estado.imagenes_data_url = [imagen_desde_bytes(contenido, mime)]
     except Exception as e:
@@ -68,12 +80,20 @@ def procesar_archivo(documento_id: str, canal: str, contenido: bytes, mime: str)
     return _serializar(estado, oci, ruta_original)
 
 
-def _serializar(estado: EstadoPipeline, oci: dict | None = None, ruta_original: str | None = None) -> dict:
+def _serializar(
+    estado: EstadoPipeline,
+    oci: dict | None = None,
+    ruta_original: str | None = None,
+) -> dict:
     """Convierte EstadoPipeline a dict plano para st.json()."""
     return {
         "documento_id": estado.documento_id,
-        "clasificacion": estado.clasificacion.model_dump() if estado.clasificacion else None,
-        "datos_extraidos": estado.datos_extraidos.model_dump() if estado.datos_extraidos else None,
+        "clasificacion": estado.clasificacion.model_dump()
+        if estado.clasificacion
+        else None,
+        "datos_extraidos": estado.datos_extraidos.model_dump()
+        if estado.datos_extraidos
+        else None,
         "decision": estado.decision.model_dump() if estado.decision else None,
         "error": estado.error,
         "archivo_original": ruta_original,
@@ -81,7 +101,9 @@ def _serializar(estado: EstadoPipeline, oci: dict | None = None, ruta_original: 
     }
 
 
-def _persistir(estado: EstadoPipeline, ruta_original: str | None = None) -> dict | None:
+def _persistir(
+    estado: EstadoPipeline, ruta_original: str | None = None
+) -> dict | None:
     if not estado.decision:
         return None
     es_urgente = (

@@ -6,7 +6,6 @@ Recibe PDF o imagen, ejecuta el pipeline y devuelve RespuestaTriaje.
 from __future__ import annotations
 
 import logging
-
 import tempfile
 from pathlib import Path
 
@@ -34,6 +33,7 @@ app = FastAPI(
     description="Agente autónomo de triaje clínico",
     version="1.0.0",
 )
+
 
 def _construir_estado(
     documento_id: str,
@@ -76,6 +76,7 @@ def _construir_estado(
 
     return estado
 
+
 def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
     """
     Persiste en OCI y construye la RespuestaTriaje final.
@@ -103,7 +104,9 @@ def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
     # Persistir en OCI
     oci_resultado = guardar_documento(
         documento_id=estado.documento_id,
-        contenido=estado.model_dump(mode="json", exclude={"imagenes_data_url"}),
+        contenido=estado.model_dump(
+            mode="json", exclude={"imagenes_data_url"}
+        ),
         destino=estado.decision.destino.value,
         es_urgente=es_urgente,
     )
@@ -117,9 +120,11 @@ def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
         almacenamiento_oci=AlmacenamientoOCI(**oci_resultado),
     )
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "servicio": "MediFlow API v1.0"}
+
 
 @app.post(
     "/triage",
@@ -154,7 +159,9 @@ async def triage(
     try:
         # PDF necesita archivo en disco para pdfplumber / pdf2image
         if tipo_archivo == TipoArchivo.PDF:
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                suffix=".pdf", delete=False
+            ) as tmp:
                 tmp.write(contenido)
                 tmp_path = tmp.name
 
