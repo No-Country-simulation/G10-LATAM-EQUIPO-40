@@ -28,8 +28,8 @@ from app.models.schemas import EstadoPipeline
 
 logger = logging.getLogger(__name__)
 
-MAX_PAGINAS = 3         # igual que el resto del pipeline
-MIN_CARACTERES = 15     # transcripción total mínima
+MAX_PAGINAS = 3  # igual que el resto del pipeline
+MIN_CARACTERES = 15  # transcripción total mínima
 
 SYSTEM_TRANSCRIBIR = """Eres un sistema de OCR para documentos clínicos escaneados.
 Transcribe fielmente TODO el texto visible de la imagen, en orden de lectura: encabezados, datos del paciente, tablas (una fila por línea), listas, sellos y firmas con texto legible, y pies de página.
@@ -42,8 +42,11 @@ REGLAS:
 
 # Frases que delatan que el modelo devolvió su propio contexto y no el documento
 _MARCAS_ECO = (
-    "preamble", "contextual safety mode", "information cutoff",
-    "large language model built by cohere", "eres un sistema de ocr",
+    "preamble",
+    "contextual safety mode",
+    "information cutoff",
+    "large language model built by cohere",
+    "eres un sistema de ocr",
     "no resumas, no interpretes",
 )
 
@@ -68,7 +71,9 @@ def limpiar_markdown(texto: str) -> str:
         l = linea.strip()
         if re.fullmatch(r"[-*_=]{3,}", l):
             continue
-        if re.match(r"^#{1,6}\s*transcripci[oó]n de la p[áa]gina", l, re.IGNORECASE):
+        if re.match(
+            r"^#{1,6}\s*transcripci[oó]n de la p[áa]gina", l, re.IGNORECASE
+        ):
             continue
         linea = re.sub(r"^\s*#{1,6}\s*", "", linea).replace("**", "")
         lineas.append(linea.rstrip())
@@ -78,18 +83,29 @@ def limpiar_markdown(texto: str) -> str:
 def _transcribir_pagina(i: int, total: int, url: str) -> str:
     llm = ChatCohere(model=MODELO_VISION, temperature=0.0)
     contenido = [
-        {"type": "text", "text": f"Transcribe esta página (página {i} de {total})."},
+        {
+            "type": "text",
+            "text": f"Transcribe esta página (página {i} de {total}).",
+        },
         {"type": "image_url", "image_url": {"url": url}},
     ]
     response = invocar_con_reintentos(
-        llm, [SystemMessage(content=SYSTEM_TRANSCRIBIR), HumanMessage(content=contenido)]
+        llm,
+        [
+            SystemMessage(content=SYSTEM_TRANSCRIBIR),
+            HumanMessage(content=contenido),
+        ],
     )
     texto = str(response.content).strip()
-    texto = re.sub(r"^\s*\[P[áa]gina\s*\d+\]\s*", "", texto)  # el marcador lo ponemos nosotros
+    texto = re.sub(
+        r"^\s*\[P[áa]gina\s*\d+\]\s*", "", texto
+    )  # el marcador lo ponemos nosotros
     texto = limpiar_markdown(texto)
 
     if es_eco_del_prompt(texto):
-        raise TranscripcionInvalida(f"la página {i} devolvió texto ajeno al documento")
+        raise TranscripcionInvalida(
+            f"la página {i} devolvió texto ajeno al documento"
+        )
     return f"[Página {i}]\n{texto}"
 
 
@@ -108,24 +124,35 @@ def nodo_transcribir(estado: EstadoPipeline) -> EstadoPipeline:
                 pool.submit(_transcribir_pagina, i, len(imagenes), url)
                 for i, url in enumerate(imagenes, start=1)
             ]
-            paginas = [f.result() for f in futuros]   # conserva el orden de las páginas
+            paginas = [
+                f.result() for f in futuros
+            ]  # conserva el orden de las páginas
 
         total = "\n\n".join(paginas)
-        if len(re.sub(r"\[P[áa]gina \d+\]", "", total).strip()) < MIN_CARACTERES:
+        if (
+            len(re.sub(r"\[P[áa]gina \d+\]", "", total).strip())
+            < MIN_CARACTERES
+        ):
             raise TranscripcionInvalida("transcripción demasiado corta")
 
         estado.texto = total
-        logger.info(f"[OCR] {estado.documento_id}: {len(total)} caracteres transcritos")
+        logger.info(
+            f"[OCR] {estado.documento_id}: {len(total)} caracteres transcritos"
+        )
 
         # Solo depuración: la transcripción contiene datos del paciente
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
             logger.info(f"[OCR] transcripción:\n{total}")
 
     except TranscripcionInvalida as e:
-        logger.warning(f"[OCR] {estado.documento_id}: {e}; va a revisión humana.")
+        logger.warning(
+            f"[OCR] {estado.documento_id}: {e}; va a revisión humana."
+        )
         estado.error = f"Transcripción no confiable ({e}). Revisar el documento manualmente."
 
     except Exception as e:
-        logger.warning(f"[OCR] {estado.documento_id}: falló ({e}); se usa lectura directa de imágenes.")
+        logger.warning(
+            f"[OCR] {estado.documento_id}: falló ({e}); se usa lectura directa de imágenes."
+        )
 
     return estado

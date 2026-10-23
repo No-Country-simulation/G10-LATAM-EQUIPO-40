@@ -8,6 +8,7 @@ Modelos:
 """
 
 from __future__ import annotations
+
 import json
 import logging
 import os
@@ -15,15 +16,21 @@ import os
 from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.models.schemas import Clasificacion, EstadoPipeline
-from app.models.enums import NivelPrioridad, TipoDocumento
 from app.chain.llm_utils import invocar_con_reintentos
-from app.chain.prompts import SYSTEM_CLASIFICAR, PROMPT_CLASIFICAR_TEXTO, PROMPT_CLASIFICAR_IMAGEN, SCHEMA_CLASIFICAR
+from app.chain.prompts import (
+    PROMPT_CLASIFICAR_IMAGEN,
+    PROMPT_CLASIFICAR_TEXTO,
+    SCHEMA_CLASIFICAR,
+    SYSTEM_CLASIFICAR,
+)
+from app.models.enums import NivelPrioridad, TipoDocumento
+from app.models.schemas import Clasificacion, EstadoPipeline
 
 logger = logging.getLogger(__name__)
 
-MODELO_TEXTO  = "command-r-plus-08-2024"
+MODELO_TEXTO = "command-r-plus-08-2024"
 MODELO_VISION = "command-a-vision-07-2025"
+
 
 def _get_llm(tiene_texto: bool):
     model = MODELO_TEXTO if tiene_texto else MODELO_VISION
@@ -31,8 +38,12 @@ def _get_llm(tiene_texto: bool):
     # OJO: response_format debe ir con bind(). Si se pasa al constructor de
     # ChatCohere, langchain-cohere lo descarta y Cohere nunca recibe el esquema.
     return llm.bind(
-        response_format={"type": "json_object", "json_schema": SCHEMA_CLASIFICAR}
+        response_format={
+            "type": "json_object",
+            "json_schema": SCHEMA_CLASIFICAR,
+        }
     )
+
 
 def _construir_mensajes(estado: EstadoPipeline) -> list:
     """Construye los mensajes según si el contenido es texto o imagen."""
@@ -45,15 +56,14 @@ def _construir_mensajes(estado: EstadoPipeline) -> list:
     # Imagen: uno o varios data URLs (máximo 3 páginas)
     content = [{"type": "text", "text": PROMPT_CLASIFICAR_IMAGEN}]
     for data_url in (estado.imagenes_data_url or [])[:3]:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": data_url}
-        })
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
 
     return [system, HumanMessage(content=content)]
 
+
 def _a_tipo_documento(valor) -> TipoDocumento:
-    """Acepta el código del esquema (RECETA_MEDICA) o, por tolerancia, el valor legible."""
+    """Acepta el código del esquema (RECETA_MEDICA) o, por tolerancia, el valor
+    legible."""
     codigo = str(valor if valor is not None else "DESCONOCIDO").strip()
     try:
         return TipoDocumento[codigo]
@@ -62,7 +72,10 @@ def _a_tipo_documento(valor) -> TipoDocumento:
     try:
         return TipoDocumento(codigo)
     except ValueError:
-        raise ValueError(f"tipo_documento inválido en la respuesta del modelo: {codigo!r}")
+        raise ValueError(
+            f"tipo_documento inválido en la respuesta del modelo: {codigo!r}"
+        )
+
 
 def _parsear_respuesta(raw: str) -> Clasificacion:
     data = json.loads(raw)
@@ -74,12 +87,15 @@ def _parsear_respuesta(raw: str) -> Clasificacion:
         score_confianza=float(data.get("score_confianza", 0.5)),
     )
 
+
 def nodo_clasificar(estado: EstadoPipeline) -> EstadoPipeline:
     """
     Nodo 1 del pipeline.
     Recibe EstadoPipeline, puebla estado.clasificacion y lo devuelve.
     """
-    logger.info("[CLASIFICAR] Iniciando clasificación de %s", estado.documento_id)
+    logger.info(
+        "[CLASIFICAR] Iniciando clasificación de %s", estado.documento_id
+    )
 
     tiene_texto = bool(estado.texto and estado.texto.strip())
 
