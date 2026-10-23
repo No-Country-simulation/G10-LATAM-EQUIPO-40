@@ -28,30 +28,35 @@ OCI_REGION = os.getenv("OCI_REGION", "")
 
 try:
     import oci  # type: ignore
+
     _OCI_DISPONIBLE = True
     logger.info("[OCI] SDK disponible.")
 except ImportError:
     _OCI_DISPONIBLE = False
     logger.warning("[OCI] SDK no instalado. Modo simulado activo.")
 
-# No local
-# def _get_client():
-#     config = oci.config.from_file()
-#     if OCI_REGION:
-#         config["region"] = OCI_REGION
-#     if os.getenv("OCI_PASS_PHRASE"):
-#         config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
-#     return oci.object_storage.ObjectStorageClient(config)
 
+# No local
 def _get_client():
-    signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-    return oci.object_storage.ObjectStorageClient(
-        config={"region": signer.region},
-        signer=signer
-    )
+    config = oci.config.from_file()
+    if OCI_REGION:
+        config["region"] = OCI_REGION
+    if os.getenv("OCI_PASS_PHRASE"):
+        config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
+    return oci.object_storage.ObjectStorageClient(config)
+
+
+# def _get_client():
+#     signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+#     return oci.object_storage.ObjectStorageClient(
+#         config={"region": signer.region},
+#         signer=signer
+#     )
+
 
 def _get_namespace(client) -> str:
     return OCI_NAMESPACE or client.get_namespace().data
+
 
 def _ruta_objeto(documento_id: str, destino: str, es_urgente: bool) -> str:
     """
@@ -70,6 +75,7 @@ def _ruta_objeto(documento_id: str, destino: str, es_urgente: bool) -> str:
 
     return f"{carpeta}/{documento_id}.json"
 
+
 def _guardar_local(ruta: str, contenido: bytes) -> None:
     """Fallback local cuando OCI no está disponible."""
     path = Path("./oci_simulado") / ruta
@@ -77,8 +83,10 @@ def _guardar_local(ruta: str, contenido: bytes) -> None:
     path.write_bytes(contenido)
     logger.info(f"[OCI-SIM] Guardado localmente: {path}")
 
+
 def _serializar(contenido: dict) -> bytes:
     return json.dumps(contenido, ensure_ascii=False, indent=2).encode("utf-8")
+
 
 def marcar_como_recibido(documento_id: str, metadata: dict) -> None:
     """
@@ -104,7 +112,9 @@ def marcar_como_recibido(documento_id: str, metadata: dict) -> None:
         )
         logger.info(f"[OCI] Recepción registrada: {ruta}")
     except Exception as e:
-        logger.warning(f"[OCI] No se pudo registrar recepción de {documento_id}: {e}")
+        logger.warning(
+            f"[OCI] No se pudo registrar recepción de {documento_id}: {e}"
+        )
         _guardar_local(ruta, contenido)
 
 
@@ -149,7 +159,7 @@ def guardar_documento(
         }
 
     except Exception as e:
-        logger.error(f"[OCI] Error al guardar {documento_id}: {e}")
+        logger.exception("[OCI] Error al guardar {documento_id}")
         _guardar_local(ruta, contenido_bytes)
         return {
             "bucket": BUCKET_NAME,
