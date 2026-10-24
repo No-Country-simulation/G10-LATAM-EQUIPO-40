@@ -1,7 +1,9 @@
 """
 MediFlow - Utilidades para llamadas al modelo.
-Reintenta errores transitorios (límite de tasa, timeouts, 5xx) con espera creciente.
-Los errores del documento o de configuración (400, 401, JSON inválido) NO se reintentan.
+Reintenta errores transitorios (límite de tasa, timeouts, 5xx) con espera
+creciente.
+Los errores del documento o de configuración (400, 401, JSON inválido) NO se
+reintentan.
 """
 
 from __future__ import annotations
@@ -13,8 +15,14 @@ logger = logging.getLogger(__name__)
 
 _CODIGOS_TRANSITORIOS = {408, 429, 500, 502, 503, 504}
 _NOMBRES_TRANSITORIOS = (
-    "timeout", "connecterror", "toomanyrequests", "serviceunavailable",
-    "gatewaytimeout", "internalservererror", "readerror", "remoteprotocolerror",
+    "timeout",
+    "connecterror",
+    "toomanyrequests",
+    "serviceunavailable",
+    "gatewaytimeout",
+    "internalservererror",
+    "readerror",
+    "remoteprotocolerror",
 )
 
 
@@ -25,7 +33,9 @@ def es_transitorio(exc: Exception) -> bool:
     return any(n in nombre for n in _NOMBRES_TRANSITORIOS)
 
 
-def invocar_con_reintentos(llm, mensajes, intentos: int = 4, espera: float = 4.0):
+def invocar_con_reintentos(
+    llm, mensajes, intentos: int = 4, espera: float = 4.0
+):
     """llm.invoke() con hasta `intentos` intentos y esperas de 4s, 8s, 16s."""
     for n in range(1, intentos + 1):
         try:

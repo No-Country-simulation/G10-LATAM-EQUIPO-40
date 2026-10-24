@@ -77,11 +77,14 @@ CASOS_DEMO = [
     },
 ]
 
+
 def _imprimir_resultado(estado) -> None:
     print()
     if estado.clasificacion:
         print(f"  🏷️  Tipo       : {estado.clasificacion.tipo_documento.value}")
-        print(f"  🚦 Prioridad  : {estado.clasificacion.nivel_prioridad.value}")
+        print(
+            f"  🚦 Prioridad  : {estado.clasificacion.nivel_prioridad.value}"
+        )
         print(f"  📊 Confianza  : {estado.clasificacion.score_confianza:.0%}")
 
     if estado.datos_extraidos:
@@ -91,7 +94,9 @@ def _imprimir_resultado(estado) -> None:
             else "no identificado"
         )
         print(f"  👤 Paciente   : {nombre}")
-        print(f"  🔬 Dx         : {estado.datos_extraidos.diagnostico_principal or 'no especificado'}")
+        print(
+            f"  🔬 Dx         : {estado.datos_extraidos.diagnostico_principal or 'no especificado'}"
+        )
 
         faltantes = estado.datos_extraidos.campos_faltantes or []
         if faltantes:
@@ -107,6 +112,7 @@ def _imprimir_resultado(estado) -> None:
 
         if estado.decision.notificacion:
             print(f"  📣 Alerta     : {estado.decision.notificacion.mensaje}")
+
 
 def demo_cli() -> None:
     if not os.getenv("CO_API_KEY"):
@@ -129,7 +135,7 @@ def demo_cli() -> None:
         estado = EstadoPipeline(
             documento_id=caso["id"],
             canal_origen=caso["canal"],
-            tipo_archivo=TipoArchivo.PDF,   # texto interno, tipo referencial
+            tipo_archivo=TipoArchivo.PDF,  # texto interno, tipo referencial
             texto=caso["contenido"],
         )
 
@@ -138,9 +144,11 @@ def demo_cli() -> None:
 
     print(f"\n{'═' * 55}\n")
 
+
 if __name__ == "__main__":
     if "--demo" in sys.argv:
         demo_cli()
     else:
         import uvicorn
+
         uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

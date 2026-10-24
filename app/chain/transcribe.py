@@ -1,15 +1,19 @@
 """
 MediFlow - Transcripción previa (OCR) de documentos escaneados.
 
-Con MEDIFLOW_OCR_PRIMERO=1, el modelo de visión solo TRANSCRIBE las páginas a texto
-y la clasificación y la extracción corren sobre ese texto con el modelo de texto.
+Con MEDIFLOW_OCR_PRIMERO=1, el modelo de visión solo TRANSCRIBE las páginas 
+a texto y la clasificación y la extracción corren sobre ese texto con el modelo 
+de texto.
 
 Protecciones:
   - Una llamada por página (una sola imagen por petición), en paralelo.
-  - Si el modelo devuelve su propio prompt en vez del documento, o la transcripción
-    es demasiado corta, el documento va a revisión humana (nunca se sigue con basura).
+  - Si el modelo devuelve su propio prompt en vez del documento, o la 
+    transcripción
+    es demasiado corta, el documento va a revisión humana (nunca se sigue con 
+    basura).
   - Si la API falla del todo, se usa la lectura directa de imágenes.
-Cuesta una llamada por página, más las 2 habituales (las páginas se leen a la vez).
+Cuesta una llamada por página, más las 2 habituales (las páginas se leen a la 
+    vez).
 """
 
 from __future__ import annotations
@@ -31,12 +35,16 @@ logger = logging.getLogger(__name__)
 MAX_PAGINAS = 3         # igual que el resto del pipeline
 MIN_CARACTERES = 15     # transcripción total mínima
 
-SYSTEM_TRANSCRIBIR = """Eres un sistema de OCR para documentos clínicos escaneados.
-Transcribe fielmente TODO el texto visible de la imagen, en orden de lectura: encabezados, datos del paciente, tablas (una fila por línea), listas, sellos y firmas con texto legible, y pies de página.
+SYSTEM_TRANSCRIBIR = """Eres un sistema de OCR para documentos clínicos 
+    escaneados. Transcribe fielmente TODO el texto visible de la imagen, en 
+    orden de lectura: encabezados, datos del paciente, tablas (una fila por 
+    línea), listas, sellos y firmas con texto legible, y pies de página.
 
 REGLAS:
-- No resumas, no interpretes, no corrijas, no completes y no agregues nada que no esté escrito.
-- Si una palabra o número es ilegible, escribe [ilegible]. Nunca adivines nombres de medicamentos, dosis ni cifras.
+- No resumas, no interpretes, no corrijas, no completes y no agregues nada que 
+    no esté escrito.
+- Si una palabra o número es ilegible, escribe [ilegible]. Nunca adivines 
+    nombres de medicamentos, dosis ni cifras.
 - No uses formato Markdown (ni #, ni **, ni ---) y no agregues títulos propios.
 - Responde solo con la transcripción, sin comentarios."""
 
@@ -62,7 +70,8 @@ def es_eco_del_prompt(texto: str) -> bool:
 
 
 def limpiar_markdown(texto: str) -> str:
-    """Quita el formato que el modelo agrega (###, **, ---) y títulos que no son del documento."""
+    """Quita el formato que el modelo agrega (###, **, ---) y títulos que no 
+        son del documento."""
     lineas: list[str] = []
     for linea in texto.splitlines():
         l = linea.strip()
