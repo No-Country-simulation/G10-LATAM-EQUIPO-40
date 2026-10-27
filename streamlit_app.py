@@ -187,7 +187,7 @@ def _sidebar():
             """
             <div style="color: #9e9e9e; font-size: 0.88rem; line-height: 1.8; margin-top: 0px;">
                 <img src="https://flagcdn.com/w20/co.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Nicolas Cardona Ramírez<br>
-                <img src="https://flagcdn.com/w20/cl.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Jimmy Alejandro Pérez<br>
+                <img src="https://flagcdn.com/w20/cl.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Jimmy Pérez Cortés<br>
                 <img src="https://flagcdn.com/w20/pe.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Daniel Lara<br>
                 <img src="https://flagcdn.com/w20/mx.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Luis Eduardo Rello Cal y Mayor
             </div>
