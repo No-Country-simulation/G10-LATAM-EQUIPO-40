@@ -192,6 +192,19 @@ def _sidebar():
         st.markdown("**Agente Clínico Autónomo**")
         st.caption("Hackathon ONE G10 — Grupo 10")
 
+        # --- SECCIÓN EQUIPO ---
+        st.markdown(
+            """
+            <div style="color: #9e9e9e; font-size: 0.88rem; line-height: 1.8; margin-top: 0px;">
+                <img src="https://flagcdn.com/w20/co.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Nicolas Cardona Ramírez<br>
+                <img src="https://flagcdn.com/w20/cl.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Jimmy Pérez Cortés<br>
+                <img src="https://flagcdn.com/w20/pe.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Daniel Lara<br>
+                <img src="https://flagcdn.com/w20/mx.png" width="18" style="vertical-align: middle; margin-right: 6px;"> Luis Eduardo Rello Cal y Mayor
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
         st.divider()
 
         st.success("🟢 Cohere command-a-vision / command-r-plus")
