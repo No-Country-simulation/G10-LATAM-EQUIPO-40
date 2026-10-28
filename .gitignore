@@ -12,3 +12,4 @@ __pycache__/
 
 oci_storage_local/auditoria_humana
 oci_simulado/
+.ruff.toml
