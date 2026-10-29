@@ -150,10 +150,37 @@ oci setup config
 
 ## 👤 Autores
 
-- **Nicolas Cardona Ramirez**, desarrollador en Colombia 🇨🇴 · [LinkedIn](https://www.linkedin.com/in/nicolas-c-53144a101) · [GitHub](https://github.com/ncardona198)
-- **Jimmy Pérez Cortés**, desarrollador en Chile 🇨🇱 · [LinkedIn](http://www.linkedin.com/in/jimmy-p%C3%A9rez-cort%C3%A9s-ba700587) · [GitHub](https://github.com/JimmyUC82)
-- **Daniel Lara**, desarrollador en Perú 🇵🇪 · [LinkedIn](https://linkedin.com/in/daniel-lara-mendoza) · [GitHub](https://github.com/Sts87)
-- **Luis Eduardo Rello Cal y Mayor**, desarrollador en México 🇲🇽 · [LinkedIn](https://www.linkedin.com/in/luis-rello-cal-y-mayor-a77b07183/) · [GitHub](https://github.com/RelloMayor)
+<blockquote>
+  <img src="https://flagcdn.com/w20/co.png" width="16" style="vertical-align: middle;" /> <strong>Nicolas Cardona Ramirez</strong> <em>(AI Engineer)</em>
+  <div style="margin-top: 8px;">
+    <a href="https://www.linkedin.com/in/nicolas-c-53144a101"><img src="https://img.shields.io/badge/LinkedIn-%230A66C2.svg?style=flat&logo=linkedin&logoColor=white" /></a> · 
+    <a href="https://github.com/ncardona198"><img src="https://img.shields.io/badge/GitHub-%23121011.svg?style=flat&logo=github&logoColor=white" /></a>
+  </div>
+</blockquote>
+
+<blockquote>
+  <img src="https://flagcdn.com/w20/cl.png" width="16" style="vertical-align: middle;" /> <strong>Jimmy Pérez Cortés</strong> <em>(LLM Engineer)</em>
+  <div style="margin-top: 8px;">
+    <a href="http://www.linkedin.com/in/jimmy-p%C3%A9rez-cort%C3%A9s-ba700587"><img src="https://img.shields.io/badge/LinkedIn-%230A66C2.svg?style=flat&logo=linkedin&logoColor=white" /></a> · 
+    <a href="https://github.com/JimmyUC82"><img src="https://img.shields.io/badge/GitHub-%23121011.svg?style=flat&logo=github&logoColor=white" /></a>
+  </div>
+</blockquote>
+
+<blockquote>
+  <img src="https://flagcdn.com/w20/pe.png" width="16" style="vertical-align: middle;" /> <strong>Daniel Lara</strong> <em>(Cloud Engineer)</em>
+  <div style="margin-top: 8px;">
+    <a href="https://linkedin.com/in/daniel-lara-mendoza"><img src="https://img.shields.io/badge/LinkedIn-%230A66C2.svg?style=flat&logo=linkedin&logoColor=white" /></a> · 
+    <a href="https://github.com/Sts87"><img src="https://img.shields.io/badge/GitHub-%23121011.svg?style=flat&logo=github&logoColor=white" /></a>
+  </div>
+</blockquote>
+
+<blockquote>
+  <img src="https://flagcdn.com/w20/mx.png" width="16" style="vertical-align: middle;" /> <strong>Luis Eduardo Rello Cal y Mayor</strong> <em>(Project Manager)</em>
+  <div style="margin-top: 8px;">
+    <a href="https://www.linkedin.com/in/luis-rello-cal-y-mayor-a77b07183/"><img src="https://img.shields.io/badge/LinkedIn-%230A66C2.svg?style=flat&logo=linkedin&logoColor=white" /></a> · 
+    <a href="https://github.com/RelloMayor"><img src="https://img.shields.io/badge/GitHub-%23121011.svg?style=flat&logo=github&logoColor=white" /></a>
+  </div>
+</blockquote>
 
 
 ---
