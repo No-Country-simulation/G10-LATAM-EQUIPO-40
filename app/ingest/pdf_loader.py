@@ -11,11 +11,13 @@ from app.ingest.image_loader import _normalizar_imagen
 
 logger = logging.getLogger(__name__)
 
-MAX_PAGINAS_IMAGEN = 3   # los nodos del pipeline usan como máximo 3 imágenes
-UMBRAL_TEXTO_MIN = 100   # menos caracteres que esto = PDF escaneado
+MAX_PAGINAS_IMAGEN = 3  # los nodos del pipeline usan como máximo 3 imágenes
+UMBRAL_TEXTO_MIN = 100  # menos caracteres que esto = PDF escaneado
 
 
-def pdf_a_imagenes_base64(path: str, dpi: int = 150, max_paginas: int = MAX_PAGINAS_IMAGEN) -> list[str]:
+def pdf_a_imagenes_base64(
+    path: str, dpi: int = 150, max_paginas: int = MAX_PAGINAS_IMAGEN
+) -> list[str]:
     """
     Convierte las primeras páginas del PDF en imágenes (data URL JPEG).
     Usa pdfplumber (pypdfium2): no requiere pdf2image ni poppler.
@@ -56,8 +58,8 @@ def procesar_pdf(path: str) -> dict[str, str | list[str]]:
     # residual, para que el modelo de visión lea la página completa.
     try:
         imagenes = pdf_a_imagenes_base64(path)
-    except Exception as e:
-        logger.error(f"[PDF] No se pudo convertir a imágenes: {e}")
+    except Exception:
+        logger.exception("[PDF] No se pudo convertir a imágenes")
         imagenes = []
 
     if imagenes:

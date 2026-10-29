@@ -11,5 +11,6 @@ __pycache__/
 .vscode/
 
 oci_storage_local/auditoria_humana
-oci_simulado/
+oci_simulado/*
 .ruff.toml
+.ruff_cache

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.storage import oci_client as _oci
@@ -77,7 +77,9 @@ def leer_objeto(ruta: str) -> bytes | None:
             )
             return resp.data.content
         except Exception as e:
-            logger.info(f"[OCI] No se pudo leer {ruta} de OCI ({e}); se busca en local.")
+            logger.info(
+                f"[OCI] No se pudo leer {ruta} de OCI ({e}); se busca en local."
+            )
     local = LOCAL_DIR / ruta
     return local.read_bytes() if local.exists() else None
 
@@ -112,7 +114,9 @@ def _listar(prefijo: str) -> dict[str, float]:
         for p in base.rglob("*"):
             if p.is_file():
                 nombre = p.relative_to(LOCAL_DIR).as_posix()
-                objetos[nombre] = max(objetos.get(nombre, 0.0), p.stat().st_mtime)
+                objetos[nombre] = max(
+                    objetos.get(nombre, 0.0), p.stat().st_mtime
+                )
     return objetos
 
 
@@ -146,13 +150,15 @@ def listar_pendientes() -> list[dict]:
     return pendientes
 
 
-def registrar_revision(documento_id: str, decision: str, notas: str = "") -> dict:
+def registrar_revision(
+    documento_id: str, decision: str, notas: str = ""
+) -> dict:
     """Guarda la decisión del revisor. decision: 'aprobado' | 'rechazado'."""
     registro = {
         "documento_id": documento_id,
         "decision": decision,
         "notas": notas,
-        "fecha_revision": datetime.now(timezone.utc).isoformat(),
+        "fecha_revision": datetime.now(UTC).isoformat(),
     }
     ruta = f"revisiones/{documento_id}_revision.json"
     status = _guardar(ruta, _serializar(registro), "application/json")

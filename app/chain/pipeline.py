@@ -13,10 +13,10 @@ from __future__ import annotations
 import logging
 import time
 
-from app.chain.transcribe import nodo_transcribir, ocr_primero_activado
 from app.chain.classify import nodo_clasificar
 from app.chain.extract import nodo_extraer
-from app.chain.router import nodo_enrutar, UMBRAL_CONFIANZA_BAJA
+from app.chain.router import UMBRAL_CONFIANZA_BAJA, nodo_enrutar
+from app.chain.transcribe import nodo_transcribir, ocr_primero_activado
 from app.models.schemas import (
     DecisionEnrutamiento,
     DestinoEnrutamiento,
@@ -24,6 +24,7 @@ from app.models.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 def _edge_post_clasificar(estado: EstadoPipeline) -> str:
     """
@@ -43,6 +44,7 @@ def _edge_post_clasificar(estado: EstadoPipeline) -> str:
         return "revision_humana"
 
     return "extraer"
+
 
 def _nodo_revision_humana(estado: EstadoPipeline) -> EstadoPipeline:
     """
@@ -67,6 +69,7 @@ def _nodo_revision_humana(estado: EstadoPipeline) -> EstadoPipeline:
     )
     return estado
 
+
 def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
     """
     Ejecuta el pipeline completo de triaje clínico.
@@ -86,9 +89,16 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
     t_inicio = time.perf_counter()
     tiempos: dict[str, float] = {}
 
-    # Opcional: transcribir primero los documentos escaneados (MEDIFLOW_OCR_PRIMERO=1)
+    # Opcional: transcribir primero los documentos escaneados 
+    # (MEDIFLOW_OCR_PRIMERO=1)
+    
     sin_texto = not (estado.texto and estado.texto.strip())
-    if ocr_primero_activado() and estado.imagenes_data_url and sin_texto and not estado.error:
+    if (
+        ocr_primero_activado()
+        and estado.imagenes_data_url
+        and sin_texto
+        and not estado.error
+    ):
         t = time.perf_counter()
         estado = nodo_transcribir(estado)
         tiempos["ocr"] = time.perf_counter() - t
@@ -97,7 +107,10 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
         # Error previo (archivo ilegible) o transcripción no confiable:
         # revisión humana sin gastar llamadas al modelo
         estado = _nodo_revision_humana(estado)
-        logger.info(f"[PIPELINE] ══ Completado: {estado.documento_id} → {estado.decision.destino.value} ══")
+        logger.info(
+            f"[PIPELINE] ══ Completado: {estado.documento_id} "
+            f"→ {estado.decision.destino.value} ══"
+        )
         return estado
 
     # Nodo 1: Clasificar
@@ -121,9 +134,13 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
         estado = nodo_enrutar(estado)
 
     detalle = ", ".join(f"{k}={v:.1f}s" for k, v in tiempos.items())
-    logger.info(f"[PIPELINE] tiempos: {detalle}, total={time.perf_counter() - t_inicio:.1f}s")
+    logger.info(
+        f"[PIPELINE] tiempos: {detalle}, total={time.perf_counter() - t_inicio:.1f}s"
+    )
 
     destino = estado.decision.destino.value if estado.decision else "N/A"
-    logger.info(f"[PIPELINE] ══ Completado: {estado.documento_id} → {destino} ══")
+    logger.info(
+        f"[PIPELINE] ══ Completado: {estado.documento_id} → {destino} ══"
+    )
 
     return estado

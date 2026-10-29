@@ -16,19 +16,23 @@ load_dotenv()
 from enum import Enum
 
 import streamlit as st
-from app.ui_progreso import progreso
-from app.chain.pipeline import ejecutar_pipeline
-from app.models.schemas import EstadoPipeline
 
-from app.storage.revision import leer_objeto, listar_pendientes, registrar_revision
+from app.storage.revision import (
+    leer_objeto,
+    listar_pendientes,
+    registrar_revision,
+)
 from app.streamlit_bridge import procesar_archivo, procesar_texto
+from app.ui_progreso import progreso
 
 # Streamlit no configura el logging de la app: sin esto, los logger.info() de
 # app.chain.* (clasificar, extraer, enrutar) no aparecen en la consola.
 _log_app = logging.getLogger("app")
 if not _log_app.handlers:
     _h = logging.StreamHandler()
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _h.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
     _log_app.addHandler(_h)
     _log_app.setLevel(logging.INFO)
 
@@ -100,11 +104,13 @@ CASOS_DEMO = [
     },
 ]
 
+
 def _txt(valor, usar_nombre: bool = False) -> str:
     """Texto limpio de un Enum (o del valor tal cual si ya es str)."""
     if isinstance(valor, Enum):
         return valor.name if usar_nombre else str(valor.value)
     return "—" if valor is None else str(valor)
+
 
 def _estilos():
     st.markdown(
@@ -163,6 +169,7 @@ def _estilos():
         unsafe_allow_html=True,
     )
 
+
 def _inicializar_estado():
     if "cola_hitl" not in st.session_state:
         st.session_state.cola_hitl = []
@@ -174,7 +181,10 @@ def _inicializar_estado():
         try:
             st.session_state.cola_hitl.extend(listar_pendientes())
         except Exception as e:
-            logging.getLogger(__name__).warning(f"No se pudo cargar la cola HITL: {e}")
+            logging.getLogger(__name__).warning(
+                f"No se pudo cargar la cola HITL: {e}"
+            )
+
 
 def _sidebar():
     with st.sidebar:
@@ -213,6 +223,7 @@ def _sidebar():
 
         st.divider()
         st.caption("MediFlow v1.0 — MVP Hackathon")
+
 
 def _mostrar_resultado(
     resultado: dict,
@@ -288,7 +299,9 @@ def _mostrar_resultado(
             st.write(f"🪪 **Matrícula:** {medico['matricula']}")
 
         # ── Diagnóstico Clínico / Estado de Evaluación ──
-        tipo_doc = _txt(clf.get("tipo_documento"), usar_nombre=True) if clf else ""
+        tipo_doc = (
+            _txt(clf.get("tipo_documento"), usar_nombre=True) if clf else ""
+        )
         dx = datos.get("diagnostico_principal")
         cie = datos.get("cie10_sugerido")
 
@@ -298,8 +311,12 @@ def _mostrar_resultado(
             if cie:
                 st.write(f"📌 **CIE-10:** {cie}")
         elif tipo_doc == "HOJA_TRIAJE":
-            esp = (clf.get("especialidad") if clf else None) or "Medicina de Urgencias"
-            st.info(f"⏳ **A la espera de evaluación médica** por especialista derivado ({esp}).")
+            esp = (
+                clf.get("especialidad") if clf else None
+            ) or "Medicina de Urgencias"
+            st.info(
+                f"⏳ **A la espera de evaluación médica** por especialista derivado ({esp})."
+            )
         else:
             st.caption("Sin diagnóstico consignado en el documento.")
 
@@ -307,20 +324,37 @@ def _mostrar_resultado(
         sv = datos.get("signos_vitales")
         if sv:
             sv_dict = (
-                sv if isinstance(sv, dict)
-                else (sv.model_dump() if hasattr(sv, "model_dump") else getattr(sv, "__dict__", {}))
+                sv
+                if isinstance(sv, dict)
+                else (
+                    sv.model_dump()
+                    if hasattr(sv, "model_dump")
+                    else getattr(sv, "__dict__", {})
+                )
             )
             if any(sv_dict.values()):
-                st.markdown("###### 🫀 Constantes Fisiológicas y Signos Vitales")
+                st.markdown(
+                    "###### 🫀 Constantes Fisiológicas y Signos Vitales"
+                )
                 col_sv1, col_sv2, col_sv3 = st.columns(3)
                 with col_sv1:
-                    st.metric("Presión (PA)", sv_dict.get("presion_arterial") or "—")
-                    st.metric("Sat. O2 (SpO2)", sv_dict.get("saturacion_oxigeno") or "—")
+                    st.metric(
+                        "Presión (PA)", sv_dict.get("presion_arterial") or "—"
+                    )
+                    st.metric(
+                        "Sat. O2 (SpO2)",
+                        sv_dict.get("saturacion_oxigeno") or "—",
+                    )
                 with col_sv2:
-                    st.metric("Pulso (FC)", sv_dict.get("frecuencia_cardiaca") or "—")
+                    st.metric(
+                        "Pulso (FC)", sv_dict.get("frecuencia_cardiaca") or "—"
+                    )
                     st.metric("Temperatura", sv_dict.get("temperatura") or "—")
                 with col_sv3:
-                    st.metric("Frec. Resp. (FR)", sv_dict.get("frecuencia_respiratoria") or "—")
+                    st.metric(
+                        "Frec. Resp. (FR)",
+                        sv_dict.get("frecuencia_respiratoria") or "—",
+                    )
                     st.metric("Glasgow", sv_dict.get("glasgow") or "—")
 
         # ── Estudios y Exámenes de Laboratorio / Imágenes ──
@@ -331,7 +365,10 @@ def _mostrar_resultado(
             if estudio_hecho:
                 st.write(f"🔬 **Estudio realizado:** {estudio_hecho}")
             if estudios_pedidos:
-                st.markdown("**Estudios solicitados:**\n" + "\n".join(f"- 📋 {e}" for e in estudios_pedidos))
+                st.markdown(
+                    "**Estudios solicitados:**\n"
+                    + "\n".join(f"- 📋 {e}" for e in estudios_pedidos)
+                )
 
         # ── Medicamentos ──
         meds = datos.get("medicamentos") or []
@@ -370,6 +407,7 @@ def _mostrar_resultado(
 
 MAX_DEMOS_VISIBLES = 3
 
+
 def _ejecutar_caso(caso: dict) -> dict:
     """Ejecuta un caso demo, lo encola en HITL si corresponde y devuelve el resultado."""
     with progreso():
@@ -389,6 +427,7 @@ def _ejecutar_caso(caso: dict) -> dict:
             st.session_state.cola_hitl.append(resultado)
 
     return resultado
+
 
 def limpiar_entrada():
     st.session_state.input_key += 1
@@ -469,25 +508,27 @@ def _tab_ingesta():
             )
 
         if archivo:
-            st.caption(f"`{archivo.name}` — {round(archivo.size / 1024, 1)} KB")
+            st.caption(
+                f"`{archivo.name}` — {round(archivo.size / 1024, 1)} KB"
+            )
             if archivo.type.startswith("image/"):
                 st.image(archivo, width="stretch")
-    
+
     with col_output:
         st.markdown("#### 2. Resultado del Agente")
-    
+
         if not btn:
             st.info("El resultado aparecerá aquí luego de procesar.")
             return
-    
+
         try:
             doc_id = f"DOC-{int(time.time())}"
-    
+
             if metodo == "📎 Subir PDF o Imagen":
                 if not archivo:
                     st.warning("⚠️ Selecciona un archivo primero.")
                     return
-    
+
                 with progreso():
                     resultado = procesar_archivo(
                         documento_id=doc_id,
@@ -499,33 +540,33 @@ def _tab_ingesta():
                 if not texto.strip():
                     st.warning("⚠️ Ingresá un texto primero.")
                     return
-    
+
                 with progreso():
                     resultado = procesar_texto(
                         documento_id=doc_id,
                         canal=canal,
                         texto=texto,
                     )
-    
+
             st.success("✅ Procesamiento completado.")
-    
+
             decision = resultado.get("decision") or {}
             clf = resultado.get("clasificacion") or {}
             destino = decision.get("destino", "")
             prioridad = clf.get("nivel_prioridad", "")
-    
+
             if "Emergencia" in destino or prioridad == "Urgente":
                 badge, badge_texto = "urgente", "🚨 PRIORIDAD CRÍTICA"
             elif decision.get("requiere_revision_humana"):
                 badge, badge_texto = "hitl", "⚠️ RETENIDO EN AUDITORÍA"
             else:
                 badge, badge_texto = "rutina", "🟢 FLUJO ESTÁNDAR"
-    
+
             _mostrar_resultado(resultado, badge=badge, badge_texto=badge_texto)
-    
+
             if decision.get("requiere_revision_humana"):
                 st.session_state.cola_hitl.append(resultado)
-    
+
         finally:
             # Se ejecuta siempre: éxito, error o return temprano
             espacio_boton.button(
@@ -536,9 +577,12 @@ def _tab_ingesta():
                 key="btn_limpiar_final",
             )
 
+
 def _tab_casos():
     st.subheader("Escenarios Clínicos Reglamentarios")
-    st.write("Los 3 flujos obligatorios del hackathon ejecutados en vivo con Cohere.")
+    st.write(
+        "Los 3 flujos obligatorios del hackathon ejecutados en vivo con Cohere."
+    )
 
     cols = st.columns(3, gap="large")
     caso_a_ejecutar = None
@@ -549,13 +593,16 @@ def _tab_casos():
             st.caption(caso["caption"])
             st.write(caso["descripcion"])
 
-            if st.button("▶ Ejecutar", key=caso["id"], use_container_width=True):
+            if st.button(
+                "▶ Ejecutar", key=caso["id"], use_container_width=True
+            ):
                 caso_a_ejecutar = caso
 
     if caso_a_ejecutar:
         resultado = _ejecutar_caso(caso_a_ejecutar)
         previos = [
-            d for d in st.session_state.demos_ejecutadas
+            d
+            for d in st.session_state.demos_ejecutadas
             if d["caso"]["id"] != caso_a_ejecutar["id"]
         ]
         st.session_state.demos_ejecutadas = (
@@ -568,7 +615,9 @@ def _tab_casos():
         st.markdown("#### Resultados")
         for i, demo in enumerate(demos):
             caso = demo["caso"]
-            with st.expander(f"{caso['label']} — {caso['badge_texto']}", expanded=(i == 0)):
+            with st.expander(
+                f"{caso['label']} — {caso['badge_texto']}", expanded=(i == 0)
+            ):
                 _mostrar_resultado(
                     demo["resultado"],
                     badge=caso["badge"],
@@ -576,9 +625,11 @@ def _tab_casos():
                     anidado=True,
                 )
 
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _cargar_original(ruta: str):
     return leer_objeto(ruta)
+
 
 def _mostrar_original(ruta: str | None, clave: str):
     if not ruta:
@@ -593,32 +644,48 @@ def _mostrar_original(ruta: str | None, clave: str):
         try:
             st.image(datos, width="stretch")
         except Exception:
-            st.warning("El archivo no se puede previsualizar (posiblemente está dañado).")
+            st.warning(
+                "El archivo no se puede previsualizar (posiblemente está dañado)."
+            )
             st.download_button(
-                "⬇️ Descargar archivo original", datos,
-                file_name=Path(ruta).name, key=f"dlraw_{clave}",
+                "⬇️ Descargar archivo original",
+                datos,
+                file_name=Path(ruta).name,
+                key=f"dlraw_{clave}",
             )
     elif ext == ".pdf":
         st.download_button(
-            "📄 Descargar PDF original", datos,
-            file_name=f"{clave}.pdf", mime="application/pdf", key=f"dl_{clave}",
+            "📄 Descargar PDF original",
+            datos,
+            file_name=f"{clave}.pdf",
+            mime="application/pdf",
+            key=f"dl_{clave}",
         )
     elif ext == ".txt":
         st.text_area(
-            "Texto original", datos.decode("utf-8", "replace"),
-            height=160, disabled=True, key=f"txt_{clave}",
+            "Texto original",
+            datos.decode("utf-8", "replace"),
+            height=160,
+            disabled=True,
+            key=f"txt_{clave}",
         )
+
 
 def _resolver_expediente(idx: int, doc_id: str, decision: str):
     res = registrar_revision(doc_id, decision)
     st.session_state.cola_hitl.pop(idx)
     if res["status"] == "exito":
-        st.session_state.mensaje_hitl = ("ok", f"Expediente {doc_id} {decision}. Registrado en OCI.")
+        st.session_state.mensaje_hitl = (
+            "ok",
+            f"Expediente {doc_id} {decision}. Registrado en OCI.",
+        )
     else:
         st.session_state.mensaje_hitl = (
-            "warn", f"Expediente {doc_id} {decision}, pero el registro quedó solo en local ({res['status']}).",
+            "warn",
+            f"Expediente {doc_id} {decision}, pero el registro quedó solo en local ({res['status']}).",
         )
     st.rerun()
+
 
 def _tab_hitl():
     st.subheader("Consola de Auditoría Human-in-the-Loop")
@@ -648,16 +715,24 @@ def _tab_hitl():
             datos = item.get("datos_extraidos") or {}
             decision = item.get("decision") or {}
 
-            paciente = (datos.get("paciente") or {}).get("nombre", "No identificado")
+            paciente = (datos.get("paciente") or {}).get(
+                "nombre", "No identificado"
+            )
             st.markdown(f"#### Expediente #{idx + 1} — {paciente}")
             st.caption(doc_id)
 
             col_info, col_accion = st.columns([2, 1])
 
             with col_info:
-                st.write(f"🏷️ **Tipo:** {_txt(clf.get('tipo_documento'), usar_nombre=True)}")
-                st.write(f"📊 **Confianza:** {clf.get('score_confianza', 0):.0%}")
-                st.write(f"💬 **Motivo:** {decision.get('justificacion', '—')}")
+                st.write(
+                    f"🏷️ **Tipo:** {_txt(clf.get('tipo_documento'), usar_nombre=True)}"
+                )
+                st.write(
+                    f"📊 **Confianza:** {clf.get('score_confianza', 0):.0%}"
+                )
+                st.write(
+                    f"💬 **Motivo:** {decision.get('justificacion', '—')}"
+                )
 
                 faltantes = datos.get("campos_faltantes") or []
                 if faltantes:
@@ -684,6 +759,7 @@ def _tab_hitl():
             with st.expander("Ver JSON completo"):
                 st.json(item)
 
+
 def main():
     _estilos()
     _inicializar_estado()
@@ -697,11 +773,13 @@ def main():
 
     hitl_count = len(st.session_state.cola_hitl)
 
-    tab_ingesta, tab_casos, tab_hitl = st.tabs([
-        "📥 Ingesta y Triaje",
-        "🧪 Casos de Demostración",
-        f"🩺 Auditoría HITL ({hitl_count})",
-    ])
+    tab_ingesta, tab_casos, tab_hitl = st.tabs(
+        [
+            "📥 Ingesta y Triaje",
+            "🧪 Casos de Demostración",
+            f"🩺 Auditoría HITL ({hitl_count})",
+        ]
+    )
 
     with tab_ingesta:
         _tab_ingesta()
@@ -711,6 +789,7 @@ def main():
 
     with tab_hitl:
         _tab_hitl()
+
 
 if __name__ == "__main__":
     main()

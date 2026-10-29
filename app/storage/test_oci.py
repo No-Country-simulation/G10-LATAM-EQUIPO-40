@@ -1,6 +1,10 @@
-from dotenv import load_dotenv; load_dotenv()
 import os
+
 import oci
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 cfg = oci.config.from_file()
 cfg["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")

@@ -18,19 +18,20 @@ import streamlit as st
 # ──────────────────────────────────────────────────────────────────────
 # El orden importa: se comprueba de arriba a abajo.
 REGLAS = [
-    ("[PIPELINE] ══ Iniciando",   "Iniciando triaje del documento…"),
-    ("[PIPELINE] ══ Completado",  "Proceso completado."),
-    ("[PIPELINE] tiempos:",       "Cerrando el pipeline…"),
-    ("[OCR]",                     "Extrayendo el texto de cada página…"),
-    ("[TRANSCRIBIR]",             "Transcribiendo documento escaneado…"),
-    ("[CLASIFICAR]",              "Clasificando el documento y leyendo sus datos…"),
-    ("[EXTRAER]",                 "Extrayendo entidades clínicas…"),
-    ("[ENRUTAR]",                 "Decidiendo a dónde enviarlo…"),
-    ("[HITL]",                    "Derivando a revisión humana…"),
-    ("[GUARDAR]",                 "Guardando el expediente…"),
-    ("[OCI] Error",               "Guardando respaldo (modo simulado)…"),
-    ("[OCI-SIM] Guardado",        "Respaldo local guardado."),
+    ("[PIPELINE] ══ Iniciando", "Iniciando triaje del documento…"),
+    ("[PIPELINE] ══ Completado", "Proceso completado."),
+    ("[PIPELINE] tiempos:", "Cerrando el pipeline…"),
+    ("[OCR]", "Extrayendo el texto de cada página…"),
+    ("[TRANSCRIBIR]", "Transcribiendo documento escaneado…"),
+    ("[CLASIFICAR]", "Clasificando el documento y leyendo sus datos…"),
+    ("[EXTRAER]", "Extrayendo entidades clínicas…"),
+    ("[ENRUTAR]", "Decidiendo a dónde enviarlo…"),
+    ("[HITL]", "Derivando a revisión humana…"),
+    ("[GUARDAR]", "Guardando el expediente…"),
+    ("[OCI] Error", "Guardando respaldo (modo simulado)…"),
+    ("[OCI-SIM] Guardado", "Respaldo local guardado."),
 ]
+
 
 def _traducir(mensaje: str) -> str | None:
     """Devuelve la frase para la UI o None si el log no es relevante."""
@@ -102,7 +103,12 @@ def _html(frases: list[str], segundos: int = 3) -> str:
 class StreamlitHandler(logging.Handler):
     """Cada log que coincida con una regla actualiza el placeholder."""
 
-    def __init__(self, placeholder, segundos: int = 3, logger_objetivo: str | None = None):
+    def __init__(
+        self,
+        placeholder,
+        segundos: int = 3,
+        logger_objetivo: str | None = None,
+    ):
         super().__init__()
         self.placeholder = placeholder
         self.segundos = segundos
@@ -110,7 +116,14 @@ class StreamlitHandler(logging.Handler):
         self.frases: list[str] = []
 
     def emit(self, record):
-        print("LOG:", record.name, "|", record.levelname, "|", record.getMessage())
+        print(
+            "LOG:",
+            record.name,
+            "|",
+            record.levelname,
+            "|",
+            record.getMessage(),
+        )
         # Si nos han dicho qué logger escuchar, filtramos
         if self.logger_objetivo and record.name != self.logger_objetivo:
             return
@@ -162,7 +175,9 @@ def progreso(
         _html(["Preparando el pipeline…"], segundos), unsafe_allow_html=True
     )
 
-    handler = StreamlitHandler(espacio, segundos=segundos, logger_objetivo=logger_nombre)
+    handler = StreamlitHandler(
+        espacio, segundos=segundos, logger_objetivo=logger_nombre
+    )
     # Enganchamos al root logger para capturar cualquier `logging.getLogger(...)`
     root = logging.getLogger()
     nivel_original = root.level

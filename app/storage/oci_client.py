@@ -20,6 +20,10 @@ import logging
 import os
 from pathlib import Path
 
+# Importaciones para modo local o mube más añadido caché
+import socket
+from functools import lru_cache
+
 logger = logging.getLogger(__name__)
 
 BUCKET_NAME = os.getenv("OCI_BUCKET_NAME", "mediflow-documentos-clinicos")
@@ -34,21 +38,72 @@ except ImportError:
     _OCI_DISPONIBLE = False
     logger.warning("[OCI] SDK no instalado. Modo simulado activo.")
 
-# No local
-# def _get_client():
-#     config = oci.config.from_file()
-#     if OCI_REGION:
-#         config["region"] = OCI_REGION
-#     if os.getenv("OCI_PASS_PHRASE"):
-#         config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
-#     return oci.object_storage.ObjectStorageClient(config)
+# ──────────────────────────────────────────────────────────────────────
+# Autenticación: detección automática local ↔ nube
+# ──────────────────────────────────────────────────────────────────────
 
+def _esta_en_instancia_oci(timeout: float = 1.0) -> bool:
+    """
+    True si estamos dentro de una instancia de OCI Compute.
+
+    Se detecta consultando el metadata service local (169.254.169.254),
+    que solo responde desde dentro de una instancia cloud.
+
+    Override manual con la variable de entorno OCI_FORCE_MODE:
+        OCI_FORCE_MODE=local     -> fuerza config file
+        OCI_FORCE_MODE=instance  -> fuerza Instance Principals
+    """
+    forzado = os.getenv("OCI_FORCE_MODE", "").lower()
+    if forzado == "instance":
+        return True
+    if forzado == "local":
+        return False
+
+    try:
+        with socket.create_connection(("169.254.169.254", 80), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+@lru_cache(maxsize=1)
 def _get_client():
-    signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-    return oci.object_storage.ObjectStorageClient(
-        config={"region": signer.region},
-        signer=signer
-    )
+    """
+    Devuelve un cliente de Object Storage, detectando el entorno:
+
+    - En una instancia OCI  -> Instance Principals (sin credenciales en disco).
+    - En local / dev        -> ~/.oci/config.
+
+    El resultado se cachea: la detección y la creación se hacen una sola vez
+    por proceso, así no se repite el sondeo al metadata service en cada llamada.
+    """
+    if _esta_en_instancia_oci():
+        try:
+            signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+            logger.info("[OCI] Cliente con Instance Principals (modo nube)")
+            return oci.object_storage.ObjectStorageClient(
+                config={"region": signer.region},
+                signer=signer,
+            )
+        except Exception as e:
+            logger.warning(
+                f"[OCI] Instance Principals falló ({e}); probando config file…"
+            )
+
+    # Modo local (o fallback si Instance Principals falló)
+    config = oci.config.from_file()
+    if OCI_REGION:
+        config["region"] = OCI_REGION
+    if os.getenv("OCI_PASS_PHRASE"):
+        config["pass_phrase"] = os.getenv("OCI_PASS_PHRASE")
+    logger.info("[OCI] Cliente con config file (modo local)")
+    return oci.object_storage.ObjectStorageClient(config)
+
+
+# Borrar cache si se cambian las credenciales en caliente
+def _reset_client_cache() -> None:
+    """Fuerza a recrear el cliente en la próxima llamada."""
+    _get_client.cache_clear()
 
 def _get_namespace(client) -> str:
     return OCI_NAMESPACE or client.get_namespace().data

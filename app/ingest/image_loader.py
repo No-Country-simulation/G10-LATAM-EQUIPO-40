@@ -1,3 +1,5 @@
+"""Código del agente que procesa las imágenes que recibe"""
+
 from __future__ import annotations
 
 import base64
@@ -6,8 +8,15 @@ from pathlib import Path
 
 from PIL import Image
 
-
-FORMATOS_SOPORTADOS = {".jpg", ".jpeg", ".png", ".webp", ".tiff", ".tif", ".bmp"}
+FORMATOS_SOPORTADOS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".tiff",
+    ".tif",
+    ".bmp",
+}
 
 MAX_LADO_PX = 2048
 
