@@ -3,7 +3,7 @@ MediFlow - Nodo 1: Clasificación
 Determina tipo de documento, especialidad, prioridad y score de confianza.
 
 Modelos:
-  - texto  -> command-r-plus-08-2024
+  - texto  -> command-a-plus-05-2026
   - imagen -> command-a-vision-07-2025
 """
 
@@ -28,7 +28,7 @@ from app.models.schemas import Clasificacion, EstadoPipeline
 
 logger = logging.getLogger(__name__)
 
-MODELO_TEXTO = "command-r-plus-08-2024"
+MODELO_TEXTO = "command-a-plus-05-2026"
 MODELO_VISION = "command-a-vision-07-2025"
 
 

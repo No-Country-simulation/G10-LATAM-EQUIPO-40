@@ -3,7 +3,7 @@ MediFlow - Nodo 2: Extracción de entidades clínicas
 Extrae datos estructurados del documento según su tipo.
 
 Modelos:
-  - texto  -> command-r-plus-08-2024
+  - texto  -> command-a-plus-05-2026
   - imagen -> command-a-vision-07-2025
 """
 
@@ -37,7 +37,7 @@ from app.models.schemas import (
 
 logger = logging.getLogger(__name__)
 
-MODELO_TEXTO = "command-r-plus-08-2024"
+MODELO_TEXTO = "command-a-plus-05-2026"
 MODELO_VISION = "command-a-vision-07-2025"
 
 
