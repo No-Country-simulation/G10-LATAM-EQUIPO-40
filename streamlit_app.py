@@ -262,6 +262,12 @@ def _mostrar_resultado(
     else:
         st.write("Sin decisión de enrutamiento.")
 
+    estado_alerta = (resultado.get("alerta") or {}).get("estado")
+    if estado_alerta == "enviado":
+        st.caption("📧 Aviso enviado por correo.")
+    elif estado_alerta == "error":
+        st.warning("📧 No se pudo enviar el aviso por correo.")
+
     st.divider()
 
     # ── H5: Clasificación ──
