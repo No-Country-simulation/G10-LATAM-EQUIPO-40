@@ -120,6 +120,31 @@ def _listar(prefijo: str) -> dict[str, float]:
     return objetos
 
 
+_RANGO_PRIORIDAD = {"Urgente": 0, "Alta": 1, "Normal": 2, "Baja": 3}
+
+
+def _es_sospecha_critica(decision: dict) -> bool:
+    return bool(decision.get("revision_prioritaria")) or str(
+        decision.get("justificacion", "")
+    ).startswith("Posible hallazgo crítico")
+
+
+def ordenar_cola(items: list[dict]) -> list[dict]:
+    """Primero las sospechas críticas, luego por prioridad y antigüedad."""
+
+    def clave(item: dict) -> tuple:
+        decision = item.get("decision") or {}
+        prioridad = (item.get("clasificacion") or {}).get("nivel_prioridad")
+        prioridad = getattr(prioridad, "value", prioridad)
+        return (
+            0 if _es_sospecha_critica(decision) else 1,
+            _RANGO_PRIORIDAD.get(prioridad, 4),
+            str(item.get("documento_id", "")),
+        )
+
+    return sorted(items, key=clave)
+
+
 def listar_pendientes() -> list[dict]:
     """Expedientes de auditoria_humana/ sin revisión posterior."""
     auditoria = _listar("auditoria_humana/")
@@ -147,7 +172,7 @@ def listar_pendientes() -> list[dict]:
             continue
         item.setdefault("documento_id", doc_id)
         pendientes.append(item)
-    return pendientes
+    return ordenar_cola(pendientes)
 
 
 def registrar_revision(

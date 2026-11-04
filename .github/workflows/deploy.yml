@@ -7,16 +7,38 @@ on:
       - 'app/**'
       - 'main.py'
       - 'streamlit_app.py'
+      - 'tests/**'
       - 'Containerfile'
       - '.github/workflows/**'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Run tests
+        run: uv run --with pytest pytest tests -q
+
   deploy:
     name: Build and Deploy to OCI
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
 
     steps:

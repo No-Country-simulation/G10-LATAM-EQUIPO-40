@@ -15,7 +15,11 @@ import time
 
 from app.chain.classify import nodo_clasificar
 from app.chain.extract import nodo_extraer
-from app.chain.router import UMBRAL_CONFIANZA_BAJA, nodo_enrutar
+from app.chain.router import (
+    UMBRAL_CONFIANZA_BAJA,
+    _regla_urgencia,
+    nodo_enrutar,
+)
 from app.chain.transcribe import nodo_transcribir, ocr_primero_activado
 from app.models.schemas import (
     DecisionEnrutamiento,
@@ -52,6 +56,15 @@ def _nodo_revision_humana(estado: EstadoPipeline) -> EstadoPipeline:
     Se activa cuando clasificación falla o tiene baja confianza.
     Saltea extracción para no gastar tokens en un documento dudoso.
     """
+    # Una señal de urgencia nunca queda en la cola común sin alerta
+    urgencia = _regla_urgencia(estado)
+    if urgencia:
+        estado.decision = urgencia
+        logger.warning(
+            f"[HITL] {estado.documento_id} → {urgencia.destino.value} | señal crítica"
+        )
+        return estado
+
     score_str = ""
     if estado.clasificacion:
         score_str = f" (confianza: {estado.clasificacion.score_confianza:.0%})"

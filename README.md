@@ -82,7 +82,7 @@ Espacio preconfigurado con los tres flujos reglamentarios del Hackathon para per
 ---
 
 ### 3. Panel de Auditoría Clínica (Human-in-the-Loop)
-Consola de supervisión para el patrón de diseño *Human-in-the-Loop* (HITL)[cite: 2]. Retiene automáticamente cualquier documento cuyo índice de confianza sea inferior a **0.85** o presente inconsistencias estructurales, permitiendo al especialista revisar el motivo de retención, inspeccionar los datos dudosos y autorizar o rechazar el documento con un clic[cite: 2].
+Consola de supervisión para el patrón de diseño *Human-in-the-Loop* (HITL)[cite: 2]. Retiene automáticamente cualquier documento cuyo índice de confianza sea inferior a **0.80**, le falte un campo obligatorio o presente inconsistencias estructurales, permitiendo al especialista revisar el motivo de retención, inspeccionar los datos dudosos y autorizar o rechazar el documento con un clic[cite: 2].
 
 ![Panel Human-in-the-Loop](assets/mediflow_panel_hitl.jpg)
 *Módulo de control de calidad médica para casos derivados a revisión manual.*[cite: 2]

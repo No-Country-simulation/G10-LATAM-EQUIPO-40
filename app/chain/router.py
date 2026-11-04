@@ -47,9 +47,17 @@ _KW_RE = re.compile(
     + "|".join(
         re.escape(k) for k in sorted(KEYWORDS_CRITICOS, key=len, reverse=True)
     )
-    + r")\b"
+    + r")(?:es|s)?\b"
 )
 _MAX_RESUMEN = 80
+
+# Negación en la misma frase, antes del término crítico.
+_CORTE_FRASE = re.compile(r"[.,;:\n]")
+_AFIRMA_DUDA = re.compile(r"\bno\s+(?:se\s+)?(?:puede\s+)?descarta")
+_NIEGA = re.compile(
+    r"\b(?:descarta\w*|descartad\w*|sin|no|niega|niegan|negativ\w*|ausencia|ningun\w*)\b"
+)
+_VENTANA_NEGACION = 40
 
 DESTINO_POR_TIPO: dict[TipoDocumento, DestinoEnrutamiento] = {
     TipoDocumento.RECETA_MEDICA: DestinoEnrutamiento.FARMACIA,
@@ -92,43 +100,56 @@ def _hallazgos_validos(estado: EstadoPipeline) -> list[str]:
     ]
 
 
-def _tiene_hallazgo_critico(estado: EstadoPipeline) -> bool:
-    if not estado.datos_extraidos:
+def _esta_negado(texto: str, inicio: int) -> bool:
+    """True si la frase niega el término crítico que empieza en `inicio`."""
+    previo = texto[max(0, inicio - _VENTANA_NEGACION) : inicio]
+    previo = _CORTE_FRASE.split(previo)[-1]
+    if _AFIRMA_DUDA.search(previo):  # "no se descarta TEP" sigue siendo sospecha
         return False
+    return bool(_NIEGA.search(previo))
+
+
+def _termino_critico(texto: str) -> str | None:
+    """Primer término crítico afirmado en el texto, o None."""
+    normalizado = _norm(texto)
+    for m in _KW_RE.finditer(normalizado):
+        if not _esta_negado(normalizado, m.start()):
+            return m.group(0)
+    return None
+
+
+def _textos_a_revisar(estado: EstadoPipeline) -> list[str]:
+    """Campos extraídos y texto original: el modelo puede omitir un hallazgo."""
+    datos = estado.datos_extraidos
+    return [
+        datos.diagnostico_principal or "" if datos else "",
+        datos.estudio_realizado or "" if datos else "",
+        estado.texto or "",
+    ]
+
+
+def _tiene_hallazgo_critico(estado: EstadoPipeline) -> bool:
     if _hallazgos_validos(estado):
         return True
-    textos = [
-        estado.datos_extraidos.diagnostico_principal or "",
-        estado.datos_extraidos.estudio_realizado or "",
-    ]
-    return any(_KW_RE.search(_norm(t)) for t in textos)
+    return any(_termino_critico(t) for t in _textos_a_revisar(estado))
 
 
 def _detalle_sospecha(estado: EstadoPipeline) -> str:
     hallazgos = _hallazgos_validos(estado)
     if hallazgos:
         return "; ".join(_acortar(h, 60) for h in hallazgos[:2])
-    datos = estado.datos_extraidos
-    for texto in (
-        datos.diagnostico_principal or "",
-        datos.estudio_realizado or "",
-    ):
-        m = _KW_RE.search(_norm(texto))
-        if m:
-            return f"mención de '{m.group(0)}'"
+    for texto in _textos_a_revisar(estado):
+        termino = _termino_critico(texto)
+        if termino:
+            return f"mención de '{termino}'"
     return "señal crítica no especificada"
 
 
 def _tiene_campos_faltantes(estado: EstadoPipeline) -> bool:
     if not estado.datos_extraidos:
         return True
-    faltantes = estado.datos_extraidos.campos_faltantes or []
-    if len(faltantes) > 2:
-        return True
-    for campo in faltantes:
-        if campo and "paciente" in campo.lower():
-            return True
-    return False
+    # Cualquier campo obligatorio faltante va a auditoría.
+    return bool(estado.datos_extraidos.campos_faltantes)
 
 
 def _nombre_paciente(estado: EstadoPipeline) -> str:
@@ -195,8 +216,18 @@ def _decision_emergencia(estado: EstadoPipeline) -> DecisionEnrutamiento:
         _especialidad(estado),
     )
     esp_txt = f" | Derivación a: {esp}" if esp else ""
+    motivos_duda = []
+    if estado.error:
+        motivos_duda.append("la lectura del documento falló")
+    if _score(estado) < UMBRAL_CONFIANZA_BAJA:
+        motivos_duda.append(f"confianza {_score(estado):.0%}")
+    validar = (
+        f" Validar contra el documento original ({', '.join(motivos_duda)})."
+        if motivos_duda
+        else ""
+    )
     if resumen:
-        justificacion = f"Hallazgo crítico ({resumen}) en {paciente}. Derivar a interconsulta con {esp or 'Guardia / Emergencias'}."
+        justificacion = f"Hallazgo crítico ({resumen}) en {paciente}. Derivar a interconsulta con {esp or 'Guardia / Emergencias'}.{validar}"
         mensaje = f"⚠️ ALERTA URGENTE: {resumen} — {paciente}{esp_txt} — {estado.canal_origen}"
     else:
         tipo = (
@@ -204,7 +235,7 @@ def _decision_emergencia(estado: EstadoPipeline) -> DecisionEnrutamiento:
             if estado.clasificacion
             else "Documento"
         )
-        justificacion = f"{tipo} clasificado como Urgente en {paciente}. Derivar a interconsulta con {esp or 'Guardia / Emergencias'}."
+        justificacion = f"{tipo} clasificado como Urgente en {paciente}. Derivar a interconsulta con {esp or 'Guardia / Emergencias'}.{validar}"
         mensaje = f"⚠️ ALERTA URGENTE: {tipo} clasificado como Urgente — {paciente}{esp_txt} — {estado.canal_origen}. Revisar el documento."
     return DecisionEnrutamiento(
         destino=DestinoEnrutamiento.COLA_EMERGENCIA,
@@ -225,10 +256,16 @@ def _regla_urgencia(estado: EstadoPipeline) -> DecisionEnrutamiento | None:
     if prioridad == NivelPrioridad.URGENTE:
         return _decision_emergencia(estado)
     if _tiene_hallazgo_critico(estado):
+        detalle = _detalle_sospecha(estado)
         return DecisionEnrutamiento(
             destino=DestinoEnrutamiento.REVISION_HUMANA,
             requiere_revision_humana=True,
-            justificacion=f"Posible hallazgo crítico sin prioridad urgente en la clasificación ({_detalle_sospecha(estado)}). Requiere validación humana.",
+            revision_prioritaria=True,
+            justificacion=f"Posible hallazgo crítico sin prioridad urgente en la clasificación ({detalle}). Requiere validación humana.",
+            notificacion=Notificacion(
+                canal="Alerta_Revision_Prioritaria",
+                mensaje=f"⚠️ POSIBLE URGENCIA: {detalle} — {_nombre_paciente(estado)} — {estado.canal_origen}. Revisar con prioridad.",
+            ),
         )
     return None
 
@@ -298,10 +335,11 @@ def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
 
 def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
     logger.info("[ENRUTAR] Aplicando reglas de enrutamiento…")
+    # La urgencia va primero: un error o baja confianza no debe silenciar una alerta.
     for regla in [
+        _regla_urgencia,
         _regla_error,
         _regla_confianza_baja,
-        _regla_urgencia,
         _regla_auditoria,
     ]:
         decision = regla(estado)
