@@ -75,6 +75,7 @@ class DecisionEnrutamiento(BaseModel):
     requiere_revision_humana: bool
     justificacion: str
     notificacion: Notificacion | None = None
+    revision_prioritaria: bool = False  # sospecha crítica: va primero en la cola
 
 
 class AlmacenamientoOCI(BaseModel):

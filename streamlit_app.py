@@ -20,6 +20,7 @@ import streamlit as st
 from app.storage.revision import (
     leer_objeto,
     listar_pendientes,
+    ordenar_cola,
     registrar_revision,
 )
 from app.streamlit_bridge import procesar_archivo, procesar_texto
@@ -671,9 +672,13 @@ def _mostrar_original(ruta: str | None, clave: str):
         )
 
 
-def _resolver_expediente(idx: int, doc_id: str, decision: str):
+def _resolver_expediente(doc_id: str, decision: str):
     res = registrar_revision(doc_id, decision)
-    st.session_state.cola_hitl.pop(idx)
+    st.session_state.cola_hitl = [
+        item
+        for item in st.session_state.cola_hitl
+        if item.get("documento_id") != doc_id
+    ]
     if res["status"] == "exito":
         st.session_state.mensaje_hitl = (
             "ok",
@@ -702,7 +707,7 @@ def _tab_hitl():
         st.session_state.cola_hitl = listar_pendientes()
         st.rerun()
 
-    cola = st.session_state.cola_hitl
+    cola = ordenar_cola(st.session_state.cola_hitl)
 
     if not cola:
         st.success("🎉 Sin expedientes pendientes de auditoría.")
@@ -720,6 +725,10 @@ def _tab_hitl():
             )
             st.markdown(f"#### Expediente #{idx + 1} — {paciente}")
             st.caption(doc_id)
+            if decision.get("revision_prioritaria") or str(
+                decision.get("justificacion", "")
+            ).startswith("Posible hallazgo crítico"):
+                st.error("🚨 Revisión prioritaria: posible hallazgo crítico")
 
             col_info, col_accion = st.columns([2, 1])
 
@@ -743,15 +752,16 @@ def _tab_hitl():
                     "Score de Confianza",
                     f"{clf.get('score_confianza', 0):.0%}",
                     "Requiere acción",
+                    delta_color="off",
                 )
 
                 b1, b2 = st.columns(2)
                 with b1:
                     if st.button("✅ Aprobar", key=f"aprobar_{doc_id}"):
-                        _resolver_expediente(idx, doc_id, "aprobado")
+                        _resolver_expediente(doc_id, "aprobado")
                     with b2:
                         if st.button("❌ Rechazar", key=f"rechazar_{doc_id}"):
-                            _resolver_expediente(idx, doc_id, "rechazado")
+                            _resolver_expediente(doc_id, "rechazado")
 
             with st.expander("📎 Documento original"):
                 _mostrar_original(item.get("archivo_original"), doc_id)

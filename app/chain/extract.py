@@ -282,6 +282,10 @@ def _respaldado(
     return sum(t in tokens_texto for t in toks) / len(toks) >= minimo
 
 
+def _cifras(texto: str) -> set[str]:
+    return {n.replace(",", ".") for n in re.findall(r"\d+(?:[.,]\d+)?", texto)}
+
+
 def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
     """Descarta (pone en None) lo que no aparece en el texto. Devuelve qué se
     descartó."""
@@ -301,7 +305,9 @@ def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
         ):
             pac.documento_identidad = None
             descartados.append("documento del paciente")
-        if pac.edad and not re.search(rf"(?<!\d){pac.edad}(?!\d)", texto):
+        if pac.edad and not re.search(
+            rf"(?<!\d){re.escape(pac.edad)}(?!\d)", texto
+        ):
             pac.edad = None
             descartados.append("edad")
         if not (pac.nombre or pac.documento_identidad or pac.edad):
@@ -336,6 +342,14 @@ def verificar_contra_texto(datos: DatosExtraidos, texto: str) -> list[str]:
         ]
         if len(validos) < len(datos.medicamentos):
             descartados.append("medicamentos")
+        # Las cifras de dosis y frecuencia deben existir en el documento
+        cifras_texto = _cifras(texto)
+        for m in validos:
+            for campo in ("dosis", "frecuencia"):
+                valor = getattr(m, campo)
+                if valor and not _cifras(valor) <= cifras_texto:
+                    setattr(m, campo, None)
+                    descartados.append(f"{campo} de {m.nombre}")
         datos.medicamentos = validos or None
 
     if datos.estudios_solicitados:
@@ -607,6 +621,7 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
 
         estado.datos_extraidos = _parsear_respuesta(response.content)
 
+        descartados: list[str] = []
         if tiene_texto:
             descartados = verificar_contra_texto(
                 estado.datos_extraidos, estado.texto
@@ -625,6 +640,13 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
         estado.datos_extraidos.campos_faltantes = calcular_faltantes(
             estado.datos_extraidos, tipo
         )
+        dudosos = [
+            d for d in descartados if d.startswith(("dosis de", "frecuencia de"))
+        ]
+        if dudosos:  # una dosis dudosa exige revisión, no solo quedar vacía
+            estado.datos_extraidos.campos_faltantes = (
+                estado.datos_extraidos.campos_faltantes or []
+            ) + dudosos
 
         paciente_nombre = (
             estado.datos_extraidos.paciente.nombre
