@@ -139,6 +139,10 @@ uv sync
 uv run streamlit run streamlit_app.py
 ```
 
+#### Alertas por correo
+
+Al terminar cada documento, MediFlow envía un aviso con su ID, tipo, prioridad y destino. El correo no incluye datos del paciente ni diagnóstico. Para activarlo, completa las variables `SMTP_*` y `ALERTA_*` del archivo `.env`, guiándote con `.env.example`.
+
 #### Uso con buckets propios de Oracle Cloud Infrastructure
 
 Para usar tus propios buckets de OCI, genera las credenciales con:

@@ -20,3 +20,6 @@ if importlib.util.find_spec("langchain_cohere") is None:
             "langchain_core.messages": messages,
         }
     )
+
+if importlib.util.find_spec("pdfplumber") is None:
+    sys.modules["pdfplumber"] = types.ModuleType("pdfplumber")

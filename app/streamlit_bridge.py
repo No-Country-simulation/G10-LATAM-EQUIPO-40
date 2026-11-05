@@ -10,6 +10,7 @@ from app.chain.pipeline import ejecutar_pipeline
 from app.ingest.image_loader import imagen_desde_bytes
 from app.ingest.pdf_loader import procesar_pdf
 from app.models.schemas import EstadoPipeline, TipoArchivo
+from app.notifications.alertas import notificar_documento
 from app.storage.oci_client import guardar_documento, marcar_como_recibido
 from app.storage.revision import guardar_original
 
@@ -31,7 +32,7 @@ def procesar_texto(documento_id: str, canal: str, texto: str) -> dict:
     )
     estado = ejecutar_pipeline(estado)
     oci = _persistir(estado, ruta_original)
-    return _serializar(estado, oci, ruta_original)
+    return _con_alerta(_serializar(estado, oci, ruta_original), canal)
 
 
 def procesar_archivo(
@@ -77,7 +78,12 @@ def procesar_archivo(
 
     estado = ejecutar_pipeline(estado)
     oci = _persistir(estado, ruta_original)
-    return _serializar(estado, oci, ruta_original)
+    return _con_alerta(_serializar(estado, oci, ruta_original), canal)
+
+
+def _con_alerta(resultado: dict, canal: str) -> dict:
+    resultado["alerta"] = notificar_documento(resultado, canal)
+    return resultado
 
 
 def _serializar(
