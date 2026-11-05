@@ -22,6 +22,7 @@ from app.models.schemas import (
     RespuestaTriaje,
     TipoArchivo,
 )
+from app.notifications.alertas import notificar_documento
 from app.storage.oci_client import guardar_documento, marcar_como_recibido
 
 load_dotenv()
@@ -109,6 +110,17 @@ def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
         ),
         destino=estado.decision.destino.value,
         es_urgente=es_urgente,
+    )
+
+    notificar_documento(
+        {
+            "documento_id": estado.documento_id,
+            "clasificacion": estado.clasificacion.model_dump()
+            if estado.clasificacion
+            else None,
+            "decision": estado.decision.model_dump(),
+        },
+        estado.canal_origen,
     )
 
     return RespuestaTriaje(
