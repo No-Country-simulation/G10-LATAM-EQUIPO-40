@@ -5,8 +5,9 @@ Usa el menú nativo de Streamlit (⋮ arriba a la derecha): Settings (tema claro
 oscuro / sistema), Print y Record a screencast. No fuerza colores, así que se
 adapta solo al tema que elija el usuario.
 
-Archivos necesarios en la misma carpeta:
-    mediflow_logo_insignia_animado.svg
+Archivos necesarios:
+    assets/mediflow_logo_insignia_animado.svg
+    inicio_mediflow.py   (landing; es la primera vista)
 
 Ejecutar:  streamlit run login_mediflow.py
 Credenciales de prueba: demo / demo1234
@@ -258,9 +259,13 @@ def vista_login() -> None:
     st.session_state.intro_hecha = True
 
 def main() -> None:
+    """Flujo: inicio (landing) -> login -> agente."""
     if st.session_state.get("autenticado"):
         from streamlit_app import main as main_agente
         main_agente()
+    elif st.session_state.get("vista", "inicio") == "inicio":
+        from inicio_mediflow import vista_inicio
+        vista_inicio()
     else:
         vista_login()
 
