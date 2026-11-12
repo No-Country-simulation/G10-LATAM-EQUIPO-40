@@ -112,7 +112,7 @@ CSS = f"""
     max-width: min(1600px, 96vw);
     min-height: 100dvh;
     display: flex; flex-direction: column; justify-content: center;
-    padding: 2rem 3rem;
+    padding: 2.5rem 3rem;
 }}
 [data-testid="stMainBlockContainer"] > div, .block-container > div {{ width: 100%; }}
 
@@ -182,6 +182,22 @@ CSS = f"""
 [data-testid="stForm"] button {{ transition: transform .2s ease, box-shadow .2s ease; }}
 [data-testid="stForm"] button:hover {{ transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0,0,0,.25); }}
 
+/* Botón "Volver al inicio": azul del fondo del logo */
+.st-key-volver_inicio button {{
+    background-color: #0d2b4e;
+    border-color: #0d2b4e;
+    color: #fff;
+    min-height: 3.8rem;
+    transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease;
+}}
+.st-key-volver_inicio button:hover {{
+    background-color: #143d6b;
+    border-color: #143d6b;
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(0,0,0,.25);
+}}
+
 /* Móvil: Streamlit apila las columnas. Se oculta el logo animado, los chips y el
    estado técnico para que el formulario quede a la vista. */
 @media (max-width: 640px) {{
@@ -222,10 +238,10 @@ def vista_login() -> None:
 
     # Izquierda: identidad primero (logo → nombre → qué hace), detalles técnicos al final
     with col_info:
-        st.markdown(logo_html(), unsafe_allow_html=True)                                   # 1
         st.title("🏥 MediFlow")                                                            # 2
         st.markdown("**Agente Clínico Autónomo**")                                         # 3
         st.caption("Triaje, extracción y enrutamiento de documentos clínicos con Cohere AI.")  # 4
+        st.markdown(logo_html(), unsafe_allow_html=True)                                   # 1
         st.markdown(CHIPS_HTML, unsafe_allow_html=True)                                    # 5
         st.caption(f"🟢 {MODELOS}")                                                        # 6
         st.caption(f"📦 OCI Buckets: {BUCKETS}")                                           # 7
@@ -241,6 +257,11 @@ def vista_login() -> None:
             enviar = st.form_submit_button(                                                # 6
                 "🚀 Ingresar a MediFlow", type="primary", use_container_width=True
             )
+
+        if st.button("← Volver al inicio",
+                     key="volver_inicio", use_container_width=True):
+            st.session_state.vista = "inicio"
+            st.rerun()
 
         if enviar:
             if not usuario or not clave:

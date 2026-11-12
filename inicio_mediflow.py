@@ -161,13 +161,8 @@ def _logo_b64() -> str | None:
 
 
 def logo_html() -> str:
-    b64 = _logo_b64()
-    if b64 is None:  # respaldo si falta el archivo
-        return '<span class="logo-fallback">🏥</span>'
-    return (
-        '<img class="logo-hero" alt="Logo de MediFlow" '
-        f'src="data:image/svg+xml;base64,{b64}">'
-    )
+    # Emoji de respaldo como opción por defecto.
+    return '<span class="logo-fallback">🏥</span>'
 
 
 # ──────────────────────────────────────────────────────────────
@@ -598,7 +593,23 @@ def vista_inicio() -> None:
 # Entrada independiente
 # ──────────────────────────────────────────────────────────────
 def main() -> None:
-    vista_inicio()
+    """Flujo: inicio (landing) -> login -> agente.
+
+    También funciona si se arranca directamente con
+    `streamlit run inicio_mediflow.py`: el botón "Ingresar" deja la vista en
+    ``login`` y aquí se renderiza el formulario; tras autenticarse se entra al
+    agente.
+    """
+    if st.session_state.get("autenticado"):
+        from streamlit_app import main as main_agente
+
+        main_agente()
+    elif st.session_state.get("vista", "inicio") == "login":
+        from login_mediflow import vista_login
+
+        vista_login()
+    else:
+        vista_inicio()
 
 
 if __name__ == "__main__":

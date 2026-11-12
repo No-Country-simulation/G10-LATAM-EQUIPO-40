@@ -263,7 +263,7 @@ def _sidebar():
         else:
             st.write("Pendientes HITL: **0**")
 
-        if st.button("🚪 Cerrar sesión", use_container_width=True, key="btn_logout"):
+        if st.button("🚪 Cerrar sesión", type="primary", use_container_width=True, key="btn_logout"):
             st.cache_data.clear()  # borra los documentos clínicos cacheados
             st.session_state.clear()
             st.rerun()
@@ -823,6 +823,21 @@ def _tab_hitl():
 
 
 def main():
+    # Puerta de acceso: si se abre el agente directamente (o la sesión no está
+    # autenticada), se muestra primero el login en lugar de ejecutar el agente.
+    if not st.session_state.get("autenticado"):
+        from login_mediflow import vista_login
+
+        vista_login()
+        return
+
+    st.set_page_config(
+        page_title="MediFlow — Triaje Clínico",
+        page_icon="🏥",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
     _estilos()
     _animacion()
     
