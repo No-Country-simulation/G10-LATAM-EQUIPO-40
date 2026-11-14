@@ -136,7 +136,7 @@ uv sync
 #    guiándote con el archivo .env.example
 
 # 4. Iniciar la aplicación
-uv run streamlit run streamlit_app.py
+uv run streamlit run inicio_mediflow.py
 ```
 
 #### Alertas por correo

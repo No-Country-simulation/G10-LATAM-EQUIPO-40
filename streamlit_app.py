@@ -112,6 +112,47 @@ def _txt(valor, usar_nombre: bool = False) -> str:
         return valor.name if usar_nombre else str(valor.value)
     return "—" if valor is None else str(valor)
 
+# Animaciones de entrada del agente
+
+DURACION_APARICION = 0.7   # lo que tarda cada elemento en aparecer
+PASO_APARICION = 0.12      # pausa entre un elemento y el siguiente
+
+
+def _animacion():
+    main = (
+        '[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"]'
+        ' > [data-testid="stElementContainer"]'
+    )
+    side = '[data-testid="stSidebar"] [data-testid="stElementContainer"]'
+
+    delays_main = "".join(
+        f"{main}:nth-child({i}) {{ animation-delay: {PASO_APARICION * (i - 1):.2f}s; }}\n"
+        for i in range(1, 7)
+    )
+    delays_side = "".join(
+        f"{side}:nth-child({i}) {{ animation-delay: {0.08 * (i - 1):.2f}s; }}\n"
+        for i in range(1, 13)
+    )
+
+    css = f"""
+    @keyframes aparecer {{
+        from {{ opacity: 0; transform: translateY(16px); }}
+        to   {{ opacity: 1; transform: translateY(0); }}
+    }}
+    {main}, {side} {{ animation: aparecer {DURACION_APARICION}s ease-out both; }}
+    {delays_main}
+    {delays_side}
+    @media (prefers-reduced-motion: reduce) {{
+        * {{ animation: none !important; transition: none !important; }}
+    }}
+    """
+
+    # Tras la primera carga se apaga, para que los reruns (botones, tabs, tema)
+    # no repitan la animación.
+    if st.session_state.get("intro_agente_hecha"):
+        css += f"{main}, {side} {{ animation: none !important; }}"
+
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 def _estilos():
     st.markdown(
@@ -221,6 +262,11 @@ def _sidebar():
             st.warning(f"⚠️ Pendientes HITL: **{hitl_count}**")
         else:
             st.write("Pendientes HITL: **0**")
+
+        if st.button("🚪 Cerrar sesión", type="primary", use_container_width=True, key="btn_logout"):
+            st.cache_data.clear()  # borra los documentos clínicos cacheados
+            st.session_state.clear()
+            st.rerun()
 
         st.divider()
         st.caption("MediFlow v1.0 — MVP Hackathon")
@@ -777,8 +823,27 @@ def _tab_hitl():
 
 
 def main():
+    # Puerta de acceso: si se abre el agente directamente (o la sesión no está
+    # autenticada), se muestra primero el login en lugar de ejecutar el agente.
+    if not st.session_state.get("autenticado"):
+        from login_mediflow import vista_login
+
+        vista_login()
+        return
+
+    st.set_page_config(
+        page_title="MediFlow — Triaje Clínico",
+        page_icon="🏥",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
     _estilos()
-    _inicializar_estado()
+    _animacion()
+    
+    with st.spinner("Cargando MediFlow..."):
+        _inicializar_estado()
+
     _sidebar()
 
     st.title("🏥 MediFlow")
@@ -806,6 +871,7 @@ def main():
     with tab_hitl:
         _tab_hitl()
 
+    st.session_state.intro_agente_hecha = True
 
 if __name__ == "__main__":
     main()
