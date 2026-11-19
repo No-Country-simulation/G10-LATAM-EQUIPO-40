@@ -61,12 +61,13 @@ Reglas:
     del documento.
 - Responde únicamente con el JSON solicitado, sin texto adicional."""
 
-PROMPT_CLASIFICAR_TEXTO = """Clasifica el siguiente documento clínico:
+PROMPT_CLASIFICAR_TEXTO = """Clasifica el siguiente documento clínico y
+    responde únicamente con el JSON solicitado:
 
 {texto}"""
 
-PROMPT_CLASIFICAR_IMAGEN = """Clasifica el documento clínico que aparece en la 
-    imagen."""
+PROMPT_CLASIFICAR_IMAGEN = """Clasifica el documento clínico que aparece en la
+    imagen y responde únicamente con el JSON solicitado."""
 
 SCHEMA_CLASIFICAR = {
     "type": "object",
@@ -133,13 +134,13 @@ REGLAS ESTRICTAS:
     corresponden a este tipo de documento.
 - Responde ÚNICAMENTE con el JSON, sin texto adicional."""
 
-PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente 
-    documento:
+PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente
+    documento y responde únicamente con el JSON solicitado:
 
 {texto}"""
 
-PROMPT_EXTRAER_IMAGEN = """Extrae todas las entidades clínicas del documento 
-    que aparece en la imagen."""
+PROMPT_EXTRAER_IMAGEN = """Extrae todas las entidades clínicas del documento
+    que aparece en la imagen y responde únicamente con el JSON solicitado."""
 
 SCHEMA_EXTRAER = {
     "type": "object",

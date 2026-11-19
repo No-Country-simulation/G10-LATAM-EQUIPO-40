@@ -9,7 +9,6 @@ Modelos:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -18,7 +17,11 @@ import unicodedata
 from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.chain.llm_utils import invocar_con_reintentos
+from app.chain.llm_utils import (
+    invocar_con_reintentos,
+    parsear_json,
+    texto_de_respuesta,
+)
 from app.chain.prompts import (
     PROMPT_EXTRAER_IMAGEN,
     PROMPT_EXTRAER_TEXTO,
@@ -44,9 +47,23 @@ MODELO_VISION = "command-a-vision-07-2025"
 def _get_llm(tiene_texto: bool):
     model = MODELO_TEXTO if tiene_texto else MODELO_VISION
     llm = ChatCohere(model=model, temperature=0.0)
-    return llm.bind(
-        response_format={"type": "json_object", "json_schema": SCHEMA_EXTRAER}
-    )
+
+    # response_format y thinking deben ir con bind(); el constructor de
+    # ChatCohere los descarta sin avisar.
+    kwargs = {
+        "response_format": {
+            "type": "json_object",
+            "json_schema": SCHEMA_EXTRAER,
+        }
+    }
+
+    # command-a-plus razona por defecto. La extracción es una tarea de copia
+    # literal: el razonamiento solo añade latencia y bloques "thinking" que no
+    # son JSON. El modelo de visión no soporta razonamiento.
+    if tiene_texto:
+        kwargs["thinking"] = {"type": "disabled"}
+
+    return llm.bind(**kwargs)
 
 
 def _construir_mensajes(estado: EstadoPipeline) -> list:
@@ -173,8 +190,8 @@ def _a_entero(valor) -> int | None:
     return None
 
 
-def _parsear_respuesta(raw: str) -> DatosExtraidos:
-    data = json.loads(raw)
+def _parsear_respuesta(respuesta) -> DatosExtraidos:
+    data = parsear_json(respuesta)
 
     # Paciente
     nombre_paciente = _limpiar(data.get("nombre_paciente"), True)
@@ -468,7 +485,8 @@ SYSTEM_COMPLETAR = """Eres un extractor de entidades clínicas. En una primera
 def _get_llm_completar(schema: dict):
     llm = ChatCohere(model=MODELO_TEXTO, temperature=0.0)
     return llm.bind(
-        response_format={"type": "json_object", "json_schema": schema}
+        thinking={"type": "disabled"},
+        response_format={"type": "json_object", "json_schema": schema},
     )
 
 
@@ -579,10 +597,11 @@ def completar_extraccion(estado: EstadoPipeline) -> list[str]:
         )
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
             logger.info(
-                f"[EXTRAER] segunda pasada, respuesta cruda: {response.content}"
+                f"[EXTRAER] segunda pasada, respuesta cruda: "
+                f"{texto_de_respuesta(response)}"
             )
 
-        nuevo = _parsear_respuesta(response.content)
+        nuevo = _parsear_respuesta(response)
         verificar_contra_texto(nuevo, estado.texto)
         recuperados = _fusionar(datos, nuevo)
     except Exception as e:
@@ -617,9 +636,11 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
         response = invocar_con_reintentos(llm, mensajes)
 
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
-            logger.info(f"[EXTRAER] respuesta cruda: {response.content}")
+            logger.info(
+                f"[EXTRAER] respuesta cruda: {texto_de_respuesta(response)}"
+            )
 
-        estado.datos_extraidos = _parsear_respuesta(response.content)
+        estado.datos_extraidos = _parsear_respuesta(response)
 
         descartados: list[str] = []
         if tiene_texto:

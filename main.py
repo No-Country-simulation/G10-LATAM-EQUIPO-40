@@ -115,8 +115,8 @@ def _imprimir_resultado(estado) -> None:
 
 
 def demo_cli() -> None:
-    if not os.getenv("CO_API_KEY"):
-        print("❌ ERROR: CO_API_KEY no definida en .env")
+    if not os.getenv("COHERE_API_KEY"):
+        print("❌ ERROR: COHERE_API_KEY no definida en .env")
         sys.exit(1)
 
     from app.chain.pipeline import ejecutar_pipeline

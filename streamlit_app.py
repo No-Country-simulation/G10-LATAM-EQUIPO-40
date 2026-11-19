@@ -249,7 +249,7 @@ def _sidebar():
 
         st.divider()
 
-        st.success("🟢 Cohere command-a-vision / command-r-plus")
+        st.success("🟢 Cohere command-a-plus / command-a-vision")
         st.info(
             "📦 OCI Buckets:\n"
             "`procesados/urgentes`\n"

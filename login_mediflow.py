@@ -28,7 +28,7 @@ st.set_page_config(
 )
 
 LOGO_SVG = Path(__file__).parent / "assets" / "mediflow_logo_insignia_animado.svg"
-MODELOS = "Cohere command-a-vision / command-r-plus"
+MODELOS = "Cohere command-a-plus / command-a-vision"
 BUCKETS = "`procesados/urgentes` · `procesados/rutina` · `auditoria_humana`"
 
 # ──────────────────────────────────────────────────────────────

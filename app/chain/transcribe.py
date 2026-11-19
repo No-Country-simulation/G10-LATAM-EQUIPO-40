@@ -27,7 +27,7 @@ from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.chain.classify import MODELO_VISION
-from app.chain.llm_utils import invocar_con_reintentos
+from app.chain.llm_utils import invocar_con_reintentos, texto_de_respuesta
 from app.models.schemas import EstadoPipeline
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def _transcribir_pagina(i: int, total: int, url: str) -> str:
     response = invocar_con_reintentos(
         llm, [SystemMessage(content=SYSTEM_TRANSCRIBIR), HumanMessage(content=contenido)]
     )
-    texto = str(response.content).strip()
+    texto = texto_de_respuesta(response).strip()
     texto = re.sub(r"^\s*\[P[áa]gina\s*\d+\]\s*", "", texto)  # el marcador lo ponemos nosotros
     texto = limpiar_markdown(texto)
 
