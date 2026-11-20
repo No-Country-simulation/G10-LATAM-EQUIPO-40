@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from app.chain.pipeline import ejecutar_pipeline
 from app.ingest.image_loader import imagen_desde_bytes
 from app.ingest.pdf_loader import procesar_pdf
+from app.models.enums import DestinoEnrutamiento
 from app.models.schemas import (
     AlmacenamientoOCI,
     EstadoPipeline,
@@ -78,6 +79,14 @@ def _construir_estado(
     return estado
 
 
+def _es_rechazo(estado: EstadoPipeline) -> bool:
+    return bool(
+        estado.decision
+        and estado.decision.destino
+        == DestinoEnrutamiento.RECHAZADO_NO_MEDICO
+    )
+
+
 def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
     """
     Persiste en OCI y construye la RespuestaTriaje final.
@@ -87,6 +96,16 @@ def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
             status="error",
             documento_id=estado.documento_id,
             error_detalle="El pipeline no generó una decisión de enrutamiento.",
+        )
+
+    # Un archivo que no es médico no se guarda ni se notifica.
+    if _es_rechazo(estado):
+        return RespuestaTriaje(
+            status="rechazado",
+            documento_id=estado.documento_id,
+            mensaje_usuario=estado.mensaje_usuario,
+            validacion_documento=estado.validacion_documento,
+            decision=estado.decision,
         )
 
     # Determinar status
@@ -126,6 +145,8 @@ def _construir_respuesta(estado: EstadoPipeline) -> RespuestaTriaje:
     return RespuestaTriaje(
         status=status,
         documento_id=estado.documento_id,
+        mensaje_usuario=estado.mensaje_usuario,
+        validacion_documento=estado.validacion_documento,
         clasificacion=estado.clasificacion,
         datos_extraidos=estado.datos_extraidos,
         decision=estado.decision,
@@ -155,17 +176,6 @@ async def triage(
     """
     contenido = await archivo.read()
 
-    # Registrar recepción en OCI
-    marcar_como_recibido(
-        documento_id,
-        {
-            "documento_id": documento_id,
-            "canal_origen": canal_origen,
-            "tipo_archivo": tipo_archivo,
-            "filename": archivo.filename,
-        },
-    )
-
     tmp_path = None
 
     try:
@@ -186,6 +196,19 @@ async def triage(
         )
 
         estado = ejecutar_pipeline(estado)
+
+        # Solo se registra la recepción si el archivo pasó el gate médico.
+        if not _es_rechazo(estado):
+            marcar_como_recibido(
+                documento_id,
+                {
+                    "documento_id": documento_id,
+                    "canal_origen": canal_origen,
+                    "tipo_archivo": tipo_archivo,
+                    "filename": archivo.filename,
+                },
+            )
+
         return _construir_respuesta(estado)
 
     except HTTPException:

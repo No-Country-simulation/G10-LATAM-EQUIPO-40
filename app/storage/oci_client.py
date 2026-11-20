@@ -156,11 +156,14 @@ def _ruta_objeto(documento_id: str, destino: str, es_urgente: bool) -> str:
     """
     Calcula la ruta del objeto según destino de enrutamiento.
 
+    Rechazado (no médico)            -> rechazados/ (no se usa normalmente)
     Cola_Revision_Humana / Auditoria -> auditoria_humana/
     Cola de emergencia o urgente     -> procesados/urgentes/
     Resto                            -> procesados/rutina/
     """
-    if any(x in destino for x in ["Revision_Humana", "Auditoria"]):
+    if "Rechazado" in destino:
+        carpeta = "rechazados"
+    elif any(x in destino for x in ["Revision_Humana", "Auditoria"]):
         carpeta = "auditoria_humana"
     elif es_urgente or "Emergencia" in destino:
         carpeta = "procesados/urgentes"

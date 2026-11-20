@@ -23,6 +23,7 @@ REGLAS = [
     ("[PIPELINE] ══ Iniciando", "Iniciando triaje del documento…"),
     ("[PIPELINE] ══ Completado", "Proceso completado."),
     ("[PIPELINE] tiempos:", "Cerrando el pipeline…"),
+    ("[VALIDAR]", "Verificando que sea un documento médico…"),
     ("[OCR]", "Extrayendo el texto de cada página…"),
     ("[TRANSCRIBIR]", "Transcribiendo documento escaneado…"),
     ("[CLASIFICAR]", "Clasificando el documento y leyendo sus datos…"),
