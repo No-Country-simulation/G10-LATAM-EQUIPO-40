@@ -13,6 +13,8 @@ from urllib.parse import quote
 
 import streamlit as st
 
+from app.security.pii import RedactingFormatter
+
 # ──────────────────────────────────────────────────────────────────────
 # Traducción de logs → frases legibles para la UI
 # ──────────────────────────────────────────────────────────────────────
@@ -110,25 +112,27 @@ class StreamlitHandler(logging.Handler):
         logger_objetivo: str | None = None,
     ):
         super().__init__()
+        self.setFormatter(RedactingFormatter("%(message)s"))
         self.placeholder = placeholder
         self.segundos = segundos
         self.logger_objetivo = logger_objetivo
         self.frases: list[str] = []
 
     def emit(self, record):
+        mensaje = self.format(record)
         print(
             "LOG:",
             record.name,
             "|",
             record.levelname,
             "|",
-            record.getMessage(),
+            mensaje,
         )
         # Si nos han dicho qué logger escuchar, filtramos
         if self.logger_objetivo and record.name != self.logger_objetivo:
             return
         try:
-            frase = _traducir(record.getMessage())
+            frase = _traducir(mensaje)
             if frase is None:
                 return
             # Evita repetir la misma frase consecutiva

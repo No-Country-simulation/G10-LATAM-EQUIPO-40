@@ -17,6 +17,7 @@ from enum import Enum
 
 import streamlit as st
 
+from app.security.pii import RedactingFormatter
 from app.storage.revision import (
     leer_objeto,
     listar_pendientes,
@@ -32,7 +33,9 @@ _log_app = logging.getLogger("app")
 if not _log_app.handlers:
     _h = logging.StreamHandler()
     _h.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        RedactingFormatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"
+        )
     )
     _log_app.addHandler(_h)
     _log_app.setLevel(logging.INFO)

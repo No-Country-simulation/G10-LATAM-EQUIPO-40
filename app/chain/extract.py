@@ -37,6 +37,7 @@ from app.models.schemas import (
     Paciente,
     SignosVitales,
 )
+from app.security.pii import mask_nombre
 
 logger = logging.getLogger(__name__)
 
@@ -672,14 +673,17 @@ def nodo_extraer(estado: EstadoPipeline) -> EstadoPipeline:
         paciente_nombre = (
             estado.datos_extraidos.paciente.nombre
             if estado.datos_extraidos.paciente
-            else "no identificado"
+            else None
         )
         faltantes = estado.datos_extraidos.campos_faltantes or []
 
         logger.info(
-            f"[EXTRAER] paciente={paciente_nombre} | "
-            f"dx={estado.datos_extraidos.diagnostico_principal} | "
+            f"[EXTRAER] paciente={mask_nombre(paciente_nombre)} | "
+            f"cie10={estado.datos_extraidos.cie10_sugerido or '—'} | "
             f"faltantes={faltantes}"
+        )
+        logger.debug(
+            f"[EXTRAER] dx={estado.datos_extraidos.diagnostico_principal}"
         )
 
     except Exception as e:
