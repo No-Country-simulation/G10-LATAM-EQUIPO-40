@@ -72,3 +72,38 @@ def test_solo_razonamiento_sin_texto_falla():
         assert "vacía" in str(e)
     else:
         raise AssertionError("debió fallar sin bloque de texto")
+
+
+def test_razonamiento_con_ejemplo_json_en_el_texto():
+    """command-a-plus puede razonar en el bloque de texto pese a thinking=disabled.
+
+    El ejemplo de JSON del razonamiento no debe ganarle a la respuesta final.
+    """
+    respuesta = _Respuesta(
+        "Analizo el documento. Podría ser:\n"
+        '{"tipo_documento": "RECETA_MEDICA", "score_confianza": 0.1}\n'
+        "pero la orden de procedimiento es más específica.\n"
+        '{"tipo_documento": "ORDEN_PROCEDIMIENTO", "score_confianza": 0.9}'
+    )
+    assert parsear_json(respuesta) == {
+        "tipo_documento": "ORDEN_PROCEDIMIENTO",
+        "score_confianza": 0.9,
+    }
+
+
+def test_razonamiento_con_json_parcial_antes_de_la_respuesta():
+    respuesta = _Respuesta(
+        'Así quedaría el JSON:\n{"tipo_documento": "ORDEN_PROCEDIMIENTO",\n'
+        '...y la respuesta final es:\n{"tipo_documento": "ORDEN_PROCEDIMIENTO"}'
+    )
+    assert parsear_json(respuesta) == {"tipo_documento": "ORDEN_PROCEDIMIENTO"}
+
+
+def test_respuestas_json_duplicadas_devuelve_la_ultima():
+    respuesta = _Respuesta('{\n  "a": 1\n}{"a": 2}')
+    assert parsear_json(respuesta) == {"a": 2}
+
+
+def test_json_anidado_no_devuelve_el_hijo():
+    respuesta = _Respuesta('{"a": {"b": 1}, "c": 2}')
+    assert parsear_json(respuesta) == {"a": {"b": 1}, "c": 2}

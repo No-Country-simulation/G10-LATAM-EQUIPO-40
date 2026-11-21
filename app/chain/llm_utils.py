@@ -43,10 +43,17 @@ def texto_de_respuesta(respuesta) -> str:
 
 
 def parsear_json(respuesta) -> dict:
-    """Extrae el primer objeto JSON de la respuesta del modelo.
+    """Extrae el objeto JSON final de la respuesta del modelo.
 
     Tolera bloques de razonamiento, cercas Markdown (```json) y texto
     alrededor, igual que hacía el antiguo `parsear_json_seguro`.
+
+    Además recorre los objetos JSON de nivel superior y devuelve el último
+    válido. `command-a-plus` a veces intercala su deliberación en el bloque de
+    texto (incluso con `thinking=disabled`) y puede incluir un ejemplo de JSON
+    antes de la respuesta final; quedarse con el primero devolvería el ejemplo
+    o fallaría con un JSON parcial. Los objetos anidados se ignoran porque se
+    sigue buscando después del final del objeto ya decodificado.
     """
     texto = texto_de_respuesta(respuesta).strip()
 
@@ -66,21 +73,40 @@ def parsear_json(respuesta) -> dict:
             f"{texto[:200]!r}"
         )
 
-    try:
-        objeto, _ = json.JSONDecoder().raw_decode(texto[inicio:])
-    except json.JSONDecodeError as e:
-        finish = getattr(respuesta, "response_metadata", {}).get(
-            "finish_reason"
-        )
-        detalle = f" (finish_reason={finish})" if finish else ""
+    decoder = json.JSONDecoder()
+    objeto: dict | None = None
+    ultimo_error: json.JSONDecodeError | None = None
+
+    while inicio != -1:
+        try:
+            candidato, fin = decoder.raw_decode(texto[inicio:])
+        except json.JSONDecodeError as e:
+            # Puede ser un JSON de ejemplo truncado dentro del razonamiento:
+            # probamos con el siguiente '{'.
+            ultimo_error = e
+            inicio = texto.find("{", inicio + 1)
+            continue
+
+        if isinstance(candidato, dict):
+            objeto = candidato
+            # Buscar el siguiente objeto después de este (no dentro).
+            inicio = texto.find("{", inicio + fin)
+        else:
+            inicio = texto.find("{", inicio + 1)
+
+    if objeto is not None:
+        return objeto
+
+    finish = getattr(respuesta, "response_metadata", {}).get("finish_reason")
+    detalle = f" (finish_reason={finish})" if finish else ""
+
+    if ultimo_error is not None:
         raise ValueError(
-            f"JSON inválido en la respuesta del modelo{detalle}: {e}"
-        ) from e
+            f"JSON inválido en la respuesta del modelo{detalle}: "
+            f"{ultimo_error}"
+        ) from ultimo_error
 
-    if not isinstance(objeto, dict):
-        raise TypeError("El JSON de la respuesta no es un objeto.")
-
-    return objeto
+    raise TypeError("El JSON de la respuesta no es un objeto.")
 
 
 _CODIGOS_TRANSITORIOS = {408, 429, 500, 502, 503, 504}
