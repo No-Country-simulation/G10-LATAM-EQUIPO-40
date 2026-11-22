@@ -1,15 +1,14 @@
 """
 MediFlow - Transcripción previa (OCR) de documentos escaneados.
 
-Activado por defecto: el modelo de visión TRANSCRIBE cada página a texto y la
-clasificación y la extracción corren sobre ese texto con el modelo de texto.
-Se puede desactivar con MEDIFLOW_OCR_PRIMERO=0 (vuelve a la lectura directa de
-las imágenes en una sola llamada).
+Se activa automáticamente cuando el documento tiene más de una página de
+imagen: con varias páginas en una sola petición el modelo de visión tiende a
+leer solo la primera y pierde datos de las últimas (médico, matrícula,
+diagnóstico de egreso, medicamentos). Transcribir página por página y luego
+extraer sobre el texto completo es mucho más fiable.
 
-Por qué está activado por defecto: con varias páginas en una sola petición el
-modelo de visión tiende a leer solo la primera y pierde datos que están en las
-últimas (médico, matrícula, diagnóstico de egreso, medicamentos). Transcribir
-página por página y luego extraer sobre el texto completo es mucho más fiable.
+Un documento de una sola página de imagen usa la lectura directa (más rápida).
+Para forzar el OCR también en una sola página: MEDIFLOW_OCR_PRIMERO=1.
 
 Protecciones:
   - Una llamada por página (una sola imagen por petición), en paralelo.
@@ -66,9 +65,13 @@ class TranscripcionInvalida(Exception):
     pass
 
 
-def ocr_primero_activado() -> bool:
-    # Activado por defecto; solo se desactiva con un "0" explícito.
-    return os.getenv("MEDIFLOW_OCR_PRIMERO", "1") != "0"
+def ocr_primero_activado(num_paginas: int = 1) -> bool:
+    """True si conviene transcribir antes de clasificar/extraer.
+
+    - Varias páginas de imagen: siempre (la lectura directa pierde páginas).
+    - Una sola página: solo si se fuerza con MEDIFLOW_OCR_PRIMERO=1.
+    """
+    return num_paginas > 1 or os.getenv("MEDIFLOW_OCR_PRIMERO") == "1"
 
 
 def es_eco_del_prompt(texto: str) -> bool:

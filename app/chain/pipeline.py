@@ -166,14 +166,16 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
         )
         return estado
 
-    # Transcribir primero los documentos escaneados (activado por defecto;
-    # desactivar con MEDIFLOW_OCR_PRIMERO=0)
+    # Transcribir primero los documentos escaneados de varias páginas.
+    # En una sola página se lee la imagen directamente (más rápido), salvo
+    # que MEDIFLOW_OCR_PRIMERO=1.
+    imagenes = estado.imagenes_data_url or []
     sin_texto = not (estado.texto and estado.texto.strip())
     if (
-        ocr_primero_activado()
-        and estado.imagenes_data_url
+        imagenes
         and sin_texto
         and not estado.error
+        and ocr_primero_activado(len(imagenes))
     ):
         t = time.perf_counter()
         estado = nodo_transcribir(estado)
