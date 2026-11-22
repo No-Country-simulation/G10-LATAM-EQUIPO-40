@@ -166,8 +166,8 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
         )
         return estado
 
-    # Opcional: transcribir primero los documentos escaneados
-    # (MEDIFLOW_OCR_PRIMERO=1)
+    # Transcribir primero los documentos escaneados (activado por defecto;
+    # desactivar con MEDIFLOW_OCR_PRIMERO=0)
     sin_texto = not (estado.texto and estado.texto.strip())
     if (
         ocr_primero_activado()
