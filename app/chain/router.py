@@ -12,11 +12,13 @@ from app.models.schemas import (
     Notificacion,
     TipoDocumento,
 )
+from app.security.pii import redactar
 
 logger = logging.getLogger(__name__)
 
 UMBRAL_CONFIANZA_BAJA = 0.60
 UMBRAL_CONFIANZA_MEDIA = 0.80
+_PACIENTE_DESCONOCIDO = "paciente desconocido"
 
 KEYWORDS_CRITICOS = {
     "tep",
@@ -154,9 +156,11 @@ def _tiene_campos_faltantes(estado: EstadoPipeline) -> bool:
 
 def _nombre_paciente(estado: EstadoPipeline) -> str:
     try:
-        return estado.datos_extraidos.paciente.nombre or "paciente desconocido"
+        return (
+            estado.datos_extraidos.paciente.nombre or _PACIENTE_DESCONOCIDO
+        )
     except AttributeError:
-        return "paciente desconocido"
+        return _PACIENTE_DESCONOCIDO
 
 
 def _resumen_critico(estado: EstadoPipeline) -> str | None:
@@ -333,6 +337,19 @@ def _regla_tipo(estado: EstadoPipeline) -> DecisionEnrutamiento:
     )
 
 
+def _registrar_decision(
+    decision: DecisionEnrutamiento, estado: EstadoPipeline
+) -> None:
+    """Log sin PII: la justificación puede citar al paciente por su nombre."""
+    nombre = _nombre_paciente(estado)
+    nombres = () if nombre == _PACIENTE_DESCONOCIDO else (nombre,)
+    logger.info(
+        "[ENRUTAR] -> %s | %s",
+        decision.destino.value,
+        redactar(decision.justificacion, nombres=nombres),
+    )
+
+
 def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
     logger.info("[ENRUTAR] Aplicando reglas de enrutamiento…")
     # La urgencia va primero: un error o baja confianza no debe silenciar una alerta.
@@ -345,12 +362,8 @@ def nodo_enrutar(estado: EstadoPipeline) -> EstadoPipeline:
         decision = regla(estado)
         if decision is not None:
             estado.decision = decision
-            logger.info(
-                f"[ENRUTAR] -> {decision.destino.value} | {decision.justificacion}"
-            )
+            _registrar_decision(decision, estado)
             return estado
     estado.decision = _regla_tipo(estado)
-    logger.info(
-        f"[ENRUTAR] -> {estado.decision.destino.value} | {estado.decision.justificacion}"
-    )
+    _registrar_decision(estado.decision, estado)
     return estado

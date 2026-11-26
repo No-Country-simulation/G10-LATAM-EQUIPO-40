@@ -1,9 +1,14 @@
 """
 MediFlow - Transcripción previa (OCR) de documentos escaneados.
 
-Con MEDIFLOW_OCR_PRIMERO=1, el modelo de visión solo TRANSCRIBE las páginas 
-a texto y la clasificación y la extracción corren sobre ese texto con el modelo 
-de texto.
+Se activa automáticamente cuando el documento tiene más de una página de
+imagen: con varias páginas en una sola petición el modelo de visión tiende a
+leer solo la primera y pierde datos de las últimas (médico, matrícula,
+diagnóstico de egreso, medicamentos). Transcribir página por página y luego
+extraer sobre el texto completo es mucho más fiable.
+
+Un documento de una sola página de imagen usa la lectura directa (más rápida).
+Para forzar el OCR también en una sola página: MEDIFLOW_OCR_PRIMERO=1.
 
 Protecciones:
   - Una llamada por página (una sola imagen por petición), en paralelo.
@@ -27,7 +32,7 @@ from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.chain.classify import MODELO_VISION
-from app.chain.llm_utils import invocar_con_reintentos
+from app.chain.llm_utils import invocar_con_reintentos, texto_de_respuesta
 from app.models.schemas import EstadoPipeline
 
 logger = logging.getLogger(__name__)
@@ -60,8 +65,13 @@ class TranscripcionInvalida(Exception):
     pass
 
 
-def ocr_primero_activado() -> bool:
-    return os.getenv("MEDIFLOW_OCR_PRIMERO") == "1"
+def ocr_primero_activado(num_paginas: int = 1) -> bool:
+    """True si conviene transcribir antes de clasificar/extraer.
+
+    - Varias páginas de imagen: siempre (la lectura directa pierde páginas).
+    - Una sola página: solo si se fuerza con MEDIFLOW_OCR_PRIMERO=1.
+    """
+    return num_paginas > 1 or os.getenv("MEDIFLOW_OCR_PRIMERO") == "1"
 
 
 def es_eco_del_prompt(texto: str) -> bool:
@@ -93,7 +103,7 @@ def _transcribir_pagina(i: int, total: int, url: str) -> str:
     response = invocar_con_reintentos(
         llm, [SystemMessage(content=SYSTEM_TRANSCRIBIR), HumanMessage(content=contenido)]
     )
-    texto = str(response.content).strip()
+    texto = texto_de_respuesta(response).strip()
     texto = re.sub(r"^\s*\[P[áa]gina\s*\d+\]\s*", "", texto)  # el marcador lo ponemos nosotros
     texto = limpiar_markdown(texto)
 

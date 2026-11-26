@@ -13,6 +13,8 @@ from urllib.parse import quote
 
 import streamlit as st
 
+from app.security.pii import RedactingFormatter
+
 # ──────────────────────────────────────────────────────────────────────
 # Traducción de logs → frases legibles para la UI
 # ──────────────────────────────────────────────────────────────────────
@@ -21,6 +23,7 @@ REGLAS = [
     ("[PIPELINE] ══ Iniciando", "Iniciando triaje del documento…"),
     ("[PIPELINE] ══ Completado", "Proceso completado."),
     ("[PIPELINE] tiempos:", "Cerrando el pipeline…"),
+    ("[VALIDAR]", "Verificando que sea un documento médico…"),
     ("[OCR]", "Extrayendo el texto de cada página…"),
     ("[TRANSCRIBIR]", "Transcribiendo documento escaneado…"),
     ("[CLASIFICAR]", "Clasificando el documento y leyendo sus datos…"),
@@ -101,7 +104,13 @@ def _html(frases: list[str], segundos: int = 3) -> str:
 # Handler de logging → placeholder de Streamlit
 # ──────────────────────────────────────────────────────────────────────
 class StreamlitHandler(logging.Handler):
-    """Cada log que coincida con una regla actualiza el placeholder."""
+    """Muestra en el placeholder la tarea actual del pipeline.
+
+    Solo se renderiza la última frase. Antes se volvía a pintar toda la lista
+    en cada log; como Streamlit reemplaza el HTML, la animación CSS arrancaba
+    de nuevo desde la primera frase y "Iniciando triaje" reaparecía una y otra
+    vez, como si el pipeline se reiniciara.
+    """
 
     def __init__(
         self,
@@ -110,34 +119,25 @@ class StreamlitHandler(logging.Handler):
         logger_objetivo: str | None = None,
     ):
         super().__init__()
+        self.setFormatter(RedactingFormatter("%(message)s"))
         self.placeholder = placeholder
         self.segundos = segundos
         self.logger_objetivo = logger_objetivo
-        self.frases: list[str] = []
+        self.frase_actual: str | None = None
 
     def emit(self, record):
-        print(
-            "LOG:",
-            record.name,
-            "|",
-            record.levelname,
-            "|",
-            record.getMessage(),
-        )
         # Si nos han dicho qué logger escuchar, filtramos
         if self.logger_objetivo and record.name != self.logger_objetivo:
             return
         try:
-            frase = _traducir(record.getMessage())
-            if frase is None:
+            frase = _traducir(self.format(record))
+            if frase is None or frase == self.frase_actual:
                 return
-            # Evita repetir la misma frase consecutiva
-            if not self.frases or self.frases[-1] != frase:
-                self.frases.append(frase)
+            self.frase_actual = frase
             self.placeholder.markdown(
-                _html(self.frases, self.segundos), unsafe_allow_html=True
+                _html([frase], self.segundos), unsafe_allow_html=True
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - logging debe tragarse el fallo
             self.handleError(record)
 
 

@@ -65,6 +65,14 @@ class DatosExtraidos(BaseModel):
     campos_faltantes: list[str] | None = None
 
 
+class ValidacionDocumento(BaseModel):
+    """Resultado del gate que decide si el archivo es un documento médico."""
+
+    es_documento_medico: bool
+    motivo: str | None = None
+    confianza: float = Field(..., ge=0.0, le=1.0)
+
+
 class Notificacion(BaseModel):
     canal: str
     mensaje: str
@@ -96,9 +104,13 @@ class EstadoPipeline(BaseModel):
     imagenes_data_url: list[str] | None = None  # páginas como Data URLs
 
     # Resultados de cada nodo
+    validacion_documento: ValidacionDocumento | None = None
     clasificacion: Clasificacion | None = None
     datos_extraidos: DatosExtraidos | None = None
     decision: DecisionEnrutamiento | None = None
+
+    # Mensaje listo para mostrar al usuario (rechazos, avisos)
+    mensaje_usuario: str | None = None
 
     # Control de flujo
     error: str | None = None
@@ -107,6 +119,8 @@ class EstadoPipeline(BaseModel):
 class RespuestaTriaje(BaseModel):
     status: str
     documento_id: str
+    mensaje_usuario: str | None = None
+    validacion_documento: ValidacionDocumento | None = None
     clasificacion: Clasificacion | None = None
     datos_extraidos: DatosExtraidos | None = None
     decision: DecisionEnrutamiento | None = None

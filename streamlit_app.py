@@ -17,6 +17,8 @@ from enum import Enum
 
 import streamlit as st
 
+from app.models.enums import DestinoEnrutamiento
+from app.security.pii import RedactingFormatter
 from app.storage.revision import (
     leer_objeto,
     listar_pendientes,
@@ -32,7 +34,9 @@ _log_app = logging.getLogger("app")
 if not _log_app.handlers:
     _h = logging.StreamHandler()
     _h.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        RedactingFormatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"
+        )
     )
     _log_app.addHandler(_h)
     _log_app.setLevel(logging.INFO)
@@ -112,6 +116,13 @@ def _txt(valor, usar_nombre: bool = False) -> str:
         return valor.name if usar_nombre else str(valor.value)
     return "—" if valor is None else str(valor)
 
+
+def _es_rechazo(resultado: dict) -> bool:
+    """True si el pipeline rechazó el archivo por no ser médico."""
+    destino = (resultado.get("decision") or {}).get("destino")
+    valor = getattr(destino, "value", destino)
+    return valor == DestinoEnrutamiento.RECHAZADO_NO_MEDICO.value
+
 # Animaciones de entrada del agente
 
 DURACION_APARICION = 0.7   # lo que tarda cada elemento en aparecer
@@ -177,6 +188,14 @@ def _estilos():
         .badge-hitl {
             background-color: #fef3c7;
             color: #92400e;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .badge-rechazo {
+            background-color: #e5e7eb;
+            color: #374151;
             padding: 4px 12px;
             border-radius: 6px;
             font-weight: 600;
@@ -249,7 +268,7 @@ def _sidebar():
 
         st.divider()
 
-        st.success("🟢 Cohere command-a-vision / command-r-plus")
+        st.success("🟢 Cohere command-a-plus / command-a-vision")
         st.info(
             "📦 OCI Buckets:\n"
             "`procesados/urgentes`\n"
@@ -285,6 +304,18 @@ def _mostrar_resultado(
             f'<span class="badge-{badge}">{badge_texto}</span>',
             unsafe_allow_html=True,
         )
+
+    if _es_rechazo(resultado):
+        st.warning(
+            resultado.get("mensaje_usuario")
+            or "El archivo no parece ser un documento médico."
+        )
+        st.info(
+            "Documentos que puedes cargar: receta, informe de laboratorio "
+            "o de imágenes, orden de procedimiento, epicrisis, certificado "
+            "médico o ficha de triaje."
+        )
+        return
 
     # ── H5: Decisión (lo más importante: qué se hace con el documento) ──
     st.markdown("##### 🚦 Decisión de Enrutamiento")
@@ -496,7 +527,7 @@ def _tab_ingesta():
     col_input, col_output = st.columns([1, 1], gap="large")
 
     with col_input:
-        st.markdown("#### 1. Seleccioná el método de entrada")
+        st.markdown("#### 1. Selecciona el método de entrada")
 
         metodo = st.radio(
             "Método:",
@@ -520,15 +551,15 @@ def _tab_ingesta():
 
         if metodo == "📎 Subir PDF o Imagen":
             archivo = st.file_uploader(
-                "Seleccioná el documento clínico:",
+                "Selecciona el documento clínico:",
                 type=["pdf", "png", "jpg", "jpeg"],
                 key=f"uploader_{st.session_state.input_key}",
             )
         else:
             texto = st.text_area(
-                "Pegá o escribí el contenido del documento:",
+                "Pega o escribe el contenido del documento:",
                 height=220,
-                placeholder="Ingresá el informe, receta u orden médica...",
+                placeholder="Ingresa el informe, receta u orden médica...",
                 key=f"texto_{st.session_state.input_key}",
             )
 
@@ -574,6 +605,8 @@ def _tab_ingesta():
             st.info("El resultado aparecerá aquí luego de procesar.")
             return
 
+        resultado = None
+
         try:
             doc_id = f"DOC-{int(time.time())}"
 
@@ -591,7 +624,7 @@ def _tab_ingesta():
                     )
             else:
                 if not texto.strip():
-                    st.warning("⚠️ Ingresá un texto primero.")
+                    st.warning("⚠️ Ingresa un texto primero.")
                     return
 
                 with progreso():
@@ -601,29 +634,48 @@ def _tab_ingesta():
                         texto=texto,
                     )
 
-            st.success("✅ Procesamiento completado.")
-
             decision = resultado.get("decision") or {}
             clf = resultado.get("clasificacion") or {}
-            destino = decision.get("destino", "")
-            prioridad = clf.get("nivel_prioridad", "")
 
-            if "Emergencia" in destino or prioridad == "Urgente":
-                badge, badge_texto = "urgente", "🚨 PRIORIDAD CRÍTICA"
-            elif decision.get("requiere_revision_humana"):
-                badge, badge_texto = "hitl", "⚠️ RETENIDO EN AUDITORÍA"
+            if _es_rechazo(resultado):
+                badge, badge_texto = (
+                    "rechazo",
+                    "🚫 NO ES UN DOCUMENTO MÉDICO",
+                )
             else:
-                badge, badge_texto = "rutina", "🟢 FLUJO ESTÁNDAR"
+                st.success("✅ Procesamiento completado.")
+                destino = decision.get("destino", "")
+                prioridad = clf.get("nivel_prioridad", "")
 
-            _mostrar_resultado(resultado, badge=badge, badge_texto=badge_texto)
+                if "Emergencia" in destino or prioridad == "Urgente":
+                    badge, badge_texto = "urgente", "🚨 PRIORIDAD CRÍTICA"
+                elif decision.get("requiere_revision_humana"):
+                    badge, badge_texto = (
+                        "hitl",
+                        "⚠️ RETENIDO EN AUDITORÍA",
+                    )
+                else:
+                    badge, badge_texto = "rutina", "🟢 FLUJO ESTÁNDAR"
 
-            if decision.get("requiere_revision_humana"):
+            _mostrar_resultado(
+                resultado, badge=badge, badge_texto=badge_texto
+            )
+
+            if (
+                decision.get("requiere_revision_humana")
+                and not _es_rechazo(resultado)
+            ):
                 st.session_state.cola_hitl.append(resultado)
 
         finally:
             # Se ejecuta siempre: éxito, error o return temprano
+            etiqueta = (
+                "🔄 Cargar otro documento"
+                if resultado and _es_rechazo(resultado)
+                else "🗑️ Limpiar"
+            )
             espacio_boton.button(
-                "🗑️ Limpiar",
+                etiqueta,
                 on_click=limpiar_entrada,
                 disabled=not hay_contenido,
                 use_container_width=True,

@@ -9,14 +9,17 @@ Modelos:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 
 from langchain_cohere import ChatCohere
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.chain.llm_utils import invocar_con_reintentos
+from app.chain.llm_utils import (
+    invocar_con_reintentos,
+    parsear_json,
+    texto_de_respuesta,
+)
 from app.chain.prompts import (
     PROMPT_CLASIFICAR_IMAGEN,
     PROMPT_CLASIFICAR_TEXTO,
@@ -35,14 +38,24 @@ MODELO_VISION = "command-a-vision-07-2025"
 def _get_llm(tiene_texto: bool):
     model = MODELO_TEXTO if tiene_texto else MODELO_VISION
     llm = ChatCohere(model=model, temperature=0.1)
-    # OJO: response_format debe ir con bind(). Si se pasa al constructor de
-    # ChatCohere, langchain-cohere lo descarta y Cohere nunca recibe el esquema.
-    return llm.bind(
-        response_format={
+
+    # OJO: response_format y thinking deben ir con bind(). Si se pasan al
+    # constructor de ChatCohere, langchain-cohere los descarta y Cohere nunca
+    # los recibe.
+    kwargs = {
+        "response_format": {
             "type": "json_object",
             "json_schema": SCHEMA_CLASIFICAR,
         }
-    )
+    }
+
+    # command-a-plus razona por defecto. En clasificación no lo necesitamos:
+    # añade latencia, consume tokens y devuelve bloques "thinking" que no son
+    # JSON. El modelo de visión no soporta razonamiento, así que no se envía.
+    if tiene_texto:
+        kwargs["thinking"] = {"type": "disabled"}
+
+    return llm.bind(**kwargs)
 
 
 def _construir_mensajes(estado: EstadoPipeline) -> list:
@@ -77,8 +90,8 @@ def _a_tipo_documento(valor) -> TipoDocumento:
         )
 
 
-def _parsear_respuesta(raw: str) -> Clasificacion:
-    data = json.loads(raw)
+def _parsear_respuesta(respuesta) -> Clasificacion:
+    data = parsear_json(respuesta)
 
     return Clasificacion(
         tipo_documento=_a_tipo_documento(data.get("tipo_documento")),
@@ -106,9 +119,11 @@ def nodo_clasificar(estado: EstadoPipeline) -> EstadoPipeline:
 
         # Solo depuración: la respuesta cruda puede contener datos del paciente
         if os.getenv("MEDIFLOW_DEBUG_RAW") == "1":
-            logger.info(f"[CLASIFICAR] respuesta cruda: {response.content}")
+            logger.info(
+                f"[CLASIFICAR] respuesta cruda: {texto_de_respuesta(response)}"
+            )
 
-        estado.clasificacion = _parsear_respuesta(response.content)
+        estado.clasificacion = _parsear_respuesta(response)
 
         logger.info(
             f"[CLASIFICAR] tipo={estado.clasificacion.tipo_documento.value} | "

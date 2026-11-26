@@ -61,12 +61,13 @@ Reglas:
     del documento.
 - Responde únicamente con el JSON solicitado, sin texto adicional."""
 
-PROMPT_CLASIFICAR_TEXTO = """Clasifica el siguiente documento clínico:
+PROMPT_CLASIFICAR_TEXTO = """Clasifica el siguiente documento clínico y
+    responde únicamente con el JSON solicitado:
 
 {texto}"""
 
-PROMPT_CLASIFICAR_IMAGEN = """Clasifica el documento clínico que aparece en la 
-    imagen."""
+PROMPT_CLASIFICAR_IMAGEN = """Clasifica el documento clínico que aparece en la
+    imagen y responde únicamente con el JSON solicitado."""
 
 SCHEMA_CLASIFICAR = {
     "type": "object",
@@ -92,6 +93,52 @@ SCHEMA_CLASIFICAR = {
         "score_confianza": {"type": "number"},
     },
     "required": ["tipo_documento", "nivel_prioridad", "score_confianza"],
+}
+
+SYSTEM_VALIDAR_DOCUMENTO = """Eres el portero de un sistema de triaje clínico.
+Tu única tarea es decidir si el documento es un documento médico utilizable
+por el sistema.
+
+SÍ es un documento médico:
+- Receta, prescripción o indicación de medicamentos.
+- Informe de laboratorio o de imágenes (radiografía, TAC, ecografía, RM).
+- Epicrisis, resumen de egreso o informe de alta.
+- Orden o solicitud de procedimiento, estudio o interconsulta.
+- Certificado médico, incapacidad o constancia clínica.
+- Hoja de triaje, nota de urgencias, historia clínica o nota de evolución.
+- Consentimiento informado o documento clínico firmado por un profesional.
+
+NO es un documento médico:
+- Facturas, recibos, comprobantes de pago, contratos o pólizas.
+- Hojas de vida, cartas, correos, publicidad, menús o tickets.
+- Documentos de identidad aislados sin contenido clínico.
+- Capturas de pantalla, fotos personales o imágenes sin texto clínico.
+- Documentos legales o administrativos sin información clínica.
+
+Reglas:
+- Evalúa el documento completo: si tiene formato administrativo pero contiene
+    una orden, receta o resultado clínico real, SÍ es médico.
+- Si hay duda razonable, responde es_documento_medico=true con confianza baja.
+    Es preferible derivar un documento dudoso a revisión que rechazar uno real.
+- motivo: máximo 15 palabras, sin nombres, documentos ni datos del paciente.
+- Responde únicamente con el JSON solicitado."""
+
+PROMPT_VALIDAR_TEXTO = """Determina si el siguiente documento es un documento
+    médico y responde únicamente con el JSON solicitado:
+
+{texto}"""
+
+PROMPT_VALIDAR_IMAGEN = """Determina si el documento que aparece en la imagen
+    es un documento médico y responde únicamente con el JSON solicitado."""
+
+SCHEMA_VALIDAR_DOCUMENTO = {
+    "type": "object",
+    "properties": {
+        "es_documento_medico": {"type": "boolean"},
+        "motivo": {"type": "string"},
+        "confianza": {"type": "number"},
+    },
+    "required": ["es_documento_medico", "confianza"],
 }
 
 SYSTEM_EXTRAER = """Eres un extractor de entidades clínicas. Tu única tarea es 
@@ -133,13 +180,13 @@ REGLAS ESTRICTAS:
     corresponden a este tipo de documento.
 - Responde ÚNICAMENTE con el JSON, sin texto adicional."""
 
-PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente 
-    documento:
+PROMPT_EXTRAER_TEXTO = """Extrae todas las entidades clínicas del siguiente
+    documento y responde únicamente con el JSON solicitado:
 
 {texto}"""
 
-PROMPT_EXTRAER_IMAGEN = """Extrae todas las entidades clínicas del documento 
-    que aparece en la imagen."""
+PROMPT_EXTRAER_IMAGEN = """Extrae todas las entidades clínicas del documento
+    que aparece en la imagen y responde únicamente con el JSON solicitado."""
 
 SCHEMA_EXTRAER = {
     "type": "object",

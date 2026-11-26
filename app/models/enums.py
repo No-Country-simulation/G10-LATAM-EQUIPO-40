@@ -34,3 +34,4 @@ class DestinoEnrutamiento(str, Enum):
     FARMACIA = "Farmacia_Hospitalaria"
     HISTORIA_CLINICA = "Historia_Clinica_Electronica"
     REVISION_HUMANA = "Cola_Revision_Humana"
+    RECHAZADO_NO_MEDICO = "Rechazado_No_Medico"

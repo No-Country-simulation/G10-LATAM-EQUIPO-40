@@ -1,9 +1,11 @@
 """
 MediFlow  Pipeline principal
-Ensambla los 3 nodos en secuencia con bifurcaciones condicionales.
+Ensambla los nodos en secuencia con bifurcaciones condicionales.
 
 Flujo:
-  ingestar → clasificar → [score < 0.6?] → REVISION_HUMANA
+  ingestar → validar_documento_medico ── no médico ──> RECHAZADO_NO_MEDICO
+                        ↓ (médico o duda)
+                     clasificar → [score < 0.6?] → REVISION_HUMANA
                         ↓ (score OK)
                      extraer → enrutar → FIN
 """
@@ -21,6 +23,7 @@ from app.chain.router import (
     nodo_enrutar,
 )
 from app.chain.transcribe import nodo_transcribir, ocr_primero_activado
+from app.chain.validate import nodo_validar_documento_medico
 from app.models.schemas import (
     DecisionEnrutamiento,
     DestinoEnrutamiento,
@@ -28,6 +31,44 @@ from app.models.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Por debajo de este valor no se rechaza: el documento sigue el pipeline y
+# probablemente termine en revisión humana. Así evitamos descartar un
+# documento clínico real por una respuesta dudosa del modelo.
+UMBRAL_RECHAZO = 0.60
+
+
+def _debe_rechazar(estado: EstadoPipeline) -> bool:
+    """True si el gate determinó que no es un documento médico."""
+    validacion = estado.validacion_documento
+    return bool(
+        validacion
+        and not validacion.es_documento_medico
+        and validacion.confianza >= UMBRAL_RECHAZO
+    )
+
+
+def _nodo_rechazo(estado: EstadoPipeline) -> EstadoPipeline:
+    """
+    Nodo terminal para archivos que no son documentos médicos.
+    No clasifica, no extrae y no se persiste en OCI.
+    """
+    estado.mensaje_usuario = (
+        "El archivo que cargaste no parece ser un documento médico. "
+        "Intenta con una receta, un informe de laboratorio o de imágenes, "
+        "una orden de procedimiento, una epicrisis, un certificado médico "
+        "o una ficha de triaje."
+    )
+    estado.decision = DecisionEnrutamiento(
+        destino=DestinoEnrutamiento.RECHAZADO_NO_MEDICO,
+        requiere_revision_humana=False,
+        justificacion="Documento rechazado: no parece un documento médico.",
+    )
+    logger.info(
+        "[VALIDAR] %s → RECHAZADO_NO_MEDICO",
+        estado.documento_id,
+    )
+    return estado
 
 
 def _edge_post_clasificar(estado: EstadoPipeline) -> str:
@@ -88,9 +129,10 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
     Ejecuta el pipeline completo de triaje clínico.
 
     Nodos:
-      1. clasificar  -> determina tipo y prioridad
-      2. extraer     -> extrae entidades clínicas (solo si confianza OK)
-      3. enrutar     -> aplica reglas y decide destino
+      0. validar_documento_medico -> corta el flujo si no es médico
+      1. clasificar               -> determina tipo y prioridad
+      2. extraer                  -> extrae entidades clínicas (confianza OK)
+      3. enrutar                  -> aplica reglas y decide destino
 
     Args:
         estado: EstadoPipeline construido por api.py con texto o imagenes_data_url
@@ -102,23 +144,45 @@ def ejecutar_pipeline(estado: EstadoPipeline) -> EstadoPipeline:
     t_inicio = time.perf_counter()
     tiempos: dict[str, float] = {}
 
-    # Opcional: transcribir primero los documentos escaneados 
-    # (MEDIFLOW_OCR_PRIMERO=1)
-    
+    if estado.error:
+        # Error de ingesta: no hay contenido que validar ni clasificar.
+        estado = _nodo_revision_humana(estado)
+        logger.info(
+            f"[PIPELINE] ══ Completado: {estado.documento_id} "
+            f"→ {estado.decision.destino.value} ══"
+        )
+        return estado
+
+    # Nodo 0: validar que sea un documento médico antes de gastar más llamadas.
+    t = time.perf_counter()
+    estado = nodo_validar_documento_medico(estado)
+    tiempos["validar"] = time.perf_counter() - t
+
+    if _debe_rechazar(estado):
+        estado = _nodo_rechazo(estado)
+        logger.info(
+            f"[PIPELINE] ══ Completado: {estado.documento_id} "
+            f"→ {estado.decision.destino.value} ══"
+        )
+        return estado
+
+    # Transcribir primero los documentos escaneados de varias páginas.
+    # En una sola página se lee la imagen directamente (más rápido), salvo
+    # que MEDIFLOW_OCR_PRIMERO=1.
+    imagenes = estado.imagenes_data_url or []
     sin_texto = not (estado.texto and estado.texto.strip())
     if (
-        ocr_primero_activado()
-        and estado.imagenes_data_url
+        imagenes
         and sin_texto
         and not estado.error
+        and ocr_primero_activado(len(imagenes))
     ):
         t = time.perf_counter()
         estado = nodo_transcribir(estado)
         tiempos["ocr"] = time.perf_counter() - t
 
     if estado.error:
-        # Error previo (archivo ilegible) o transcripción no confiable:
-        # revisión humana sin gastar llamadas al modelo
+        # Transcripción no confiable: revisión humana sin seguir el pipeline
         estado = _nodo_revision_humana(estado)
         logger.info(
             f"[PIPELINE] ══ Completado: {estado.documento_id} "
